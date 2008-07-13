@@ -1,0 +1,43 @@
+  NSMUX TRANSLATOR
+
+  WHAT'S THIS?
+  nsmux is a GNU/Hurd translator that mirrors the contents of the
+directory it is given and provides the possibility to apply
+namespace-based translator selection to its contents.
+
+  WHAT'S NAMESPACE-BASED TRANSLATOR SELECTION?
+  Namespace-based translator selection is a special technique of
+applying translators without using the 'settrans' command. The main
+idea is using special file names. For example, if you want to the
+contents of file 'file' translated by translator 'x', you have to just
+ask for 'file,,x'. You can also obtain the untranslated version of the
+node 'file' using the following syntax: 'file,,0'. Note how we avoid
+the usage of 'settrans', and, at the same time, maintain the
+advantages of translator-based approach.
+  It is important to mention that the idea described above can be
+applied similarly to directories: if there is a directory 'directory'
+and you ask for 'directory,,x/', you will provided with a directory in
+which every entry will be translated by translator 'x'.
+  You can also filter the translator stack: suppose you have a file
+'file' translated by translators 'x', 'u', 'y', and 'z'. In most
+cases, you can request for 'file,,-u', and you will be provided with
+the node 'file' translated by 'x' only (the only translator which
+comes before 'u'). As usual, this syntax can be equally applied to
+directories.
+  Note that the functionality described in the previous paragraph is
+not hard-coded in the namespace proxy and depends on the decision of
+the special filtering translator '-u'.
+
+  WHAT'S IT FOR?
+  Namespace-based translator selection greatly facilitates the work
+with translators and therefore contributes to enlargening of their
+field of applicability. On the other hand, applying translators to a
+whole directory tree directly increases the capabilities of simple
+translators (libtrivfs based).
+
+  AUTHOR OF THE IDEA
+
+Olaf Buddenhagen (antrik)
+
+  DEVELOPER
+Sergiu Ivanov <unlimitedscolobb@gmail.com>
