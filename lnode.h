@@ -48,6 +48,17 @@ struct lnode
 	/*the full path to the lnode*/
 	char * path;
 	
+	/*the malloced set of translators which have to be stacked upon this node
+	  and upon its children; the corresponding translators will have to decide
+	  on their own whether to accept directories or not*/
+	char * trans;
+	
+	/*the number of translators listed in `translators`*/
+	size_t ntrans;
+	
+	/*the length of the list of translators (in bytes)*/
+	size_t translen;
+
 	/*the associated flags*/
 	int flags;
 	
@@ -138,6 +149,15 @@ void
 lnode_uninstall
 	(
 	lnode_t * node
+	);
+/*----------------------------------------------------------------------------*/
+/*Constructs a list of translators that were set on the ancestors of `node`*/
+error_t
+lnode_list_translators
+	(
+	lnode_t * node,
+	char ** trans,	/*the malloced list of 0-separated strings*/
+	size_t * ntrans	/*the number of elements in `trans`*/
 	);
 /*----------------------------------------------------------------------------*/
 #endif /*__LNODE_H__*/

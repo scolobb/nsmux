@@ -558,41 +558,8 @@ netfs_attempt_lookup
 		return err;
 		}
 
-	/*Try to lookup the given file in the underlying directory*/
-	mach_port_t p = file_name_lookup_under(dir->nn->port, name, 0, 0);
-	
-	/*If the lookup failed*/
-	if(p == MACH_PORT_NULL)
-		{
-		/*unlock the directory*/
-		mutex_unlock(&dir->lock);
-
-		/*no such entry*/
-		return ENOENT;
-		}
-
-	/*Obtain the stat information about the file*/
-	io_statbuf_t stat;
-	err = io_stat(p, &stat);
-	
-	/*Deallocate the obtained port*/
-	PORT_DEALLOC(p);
-
-	/*If this file is not a directory*/
-	if(err || !S_ISDIR(stat.st_mode))
-		{
-		/*do not set the port*/
-		p = MACH_PORT_NULL;
-		}
-	else
-		{
-		/*lookup the port with the right to read the contents of the directory*/
-		p = file_name_lookup_under(dir->nn->port, name, O_READ | O_DIRECTORY, 0);
-		if(p == MACH_PORT_NULL)
-			{
-			return EBADF; /*not enough rights?*/
-			}
-		}
+	/*The port to the requested file*/
+	mach_port_t p;
 
 	/*The lnode corresponding to the entry we are supposed to fetch*/
 	lnode_t * lnode;
@@ -626,53 +593,394 @@ netfs_attempt_lookup
 		mutex_unlock(&dir->lock);
 		}/*finalize*/
 
-	/*Try to find an lnode called `name` under the lnode corresponding to `dir`*/
-	err = lnode_get(dir->nn->lnode, name, &lnode);
-	
-	/*If such an entry does not exist*/
-	if(err == ENOENT)
+	/*Performs a usual lookup*/
+	error_t
+	lookup
+		(
+		char * name	/*lookup this*/
+		)
 		{
-		/*create a new lnode with the supplied name*/
-		err = lnode_create(name, &lnode);
+		/*Try to lookup the given file in the underlying directory*/
+		p = file_name_lookup_under(dir->nn->port, name, 0, 0);
+	
+		/*If the lookup failed*/
+		if(p == MACH_PORT_NULL)
+			{
+			/*unlock the directory*/
+			mutex_unlock(&dir->lock);
+
+			/*no such entry*/
+			return ENOENT;
+			}
+
+		/*Obtain the stat information about the file*/
+		io_statbuf_t stat;
+		err = io_stat(p, &stat);
+	
+		/*Deallocate the obtained port*/
+		PORT_DEALLOC(p);
+
+		/*If this file is not a directory*/
+		if(err || !S_ISDIR(stat.st_mode))
+			{
+			/*do not set the port*/
+			p = MACH_PORT_NULL;
+			}
+		else
+			{
+			/*lookup the port with the right to read the contents of the directory*/
+			p = file_name_lookup_under(dir->nn->port, name, O_READ | O_DIRECTORY, 0);
+			if(p == MACH_PORT_NULL)
+				{
+				return EBADF; /*not enough rights?*/
+				}
+			}
+
+		/*Try to find an lnode called `name` under the lnode corresponding to `dir`*/
+		err = lnode_get(dir->nn->lnode, name, &lnode);
+	
+		/*If such an entry does not exist*/
+		if(err == ENOENT)
+			{
+			/*create a new lnode with the supplied name*/
+			err = lnode_create(name, &lnode);
+			if(err)
+				{
+				finalize();
+				return err;
+				}
+		
+			/*install the new lnode into the directory*/
+			lnode_install(dir->nn->lnode, lnode);
+			}
+		else
+			{
+			/*TODO: Remove the code from here and put it into the caller block,
+				so that we can decide there whether to remove translators and
+				*which* ones to remove*/
+
+			/*free the list of translators associated with this node, if
+				such a list exists*/
+			if(lnode->trans)
+				{
+				free(lnode->trans);
+				lnode->trans = NULL;
+				lnode->ntrans = lnode->translen = 0;
+				}
+			}
+	
+		/*Obtain the node corresponding to this lnode*/
+		err = ncache_node_lookup(lnode, node);
+	
+		/*Remove an extra reference from the lnode*/
+		lnode_ref_remove(lnode);
+	
+		/*If the lookup in the cache failed*/
+		if(err)
+			{
+			/*stop*/
+			finalize();
+			return err;
+			}
+
+		/*Store the port in the node*/
+		(*node)->nn->port = p;
+
+		/*Construct the full path to the node*/
+		err = lnode_path_construct(lnode, NULL);
+		if(err)
+			{
+			finalize();
+			return err;
+			}
+	
+		/*Now the node is up-to-date*/
+		(*node)->nn->flags = FLAG_NODE_ULFS_UPTODATE;
+
+		/*Everything OK here*/
+		return 0;
+		}/*lookup*/
+
+	/*The position of ',,' in the name*/
+	char * sep;
+	
+	/*A pointer for various operations on strings*/
+	char * str;
+	
+	/*While pairs of commas can still be found in the name*/
+	for(sep = strstr(name, ",,"); sep; sep = strstr(sep, ",,"))
+		{
+		/*If the separator is situated at the beginning, it is an error*/
+		if(sep == name)
+			{
+			finalize();
+			return ENOENT;
+			}
+
+		/*If current pair of commas is not escaped*/
+		if(*(sep + 2) != ',')
+			/*stop here, we've found what we needed*/
+			break;
+		
+		/*remove the escaping ',' from the string*/
+		for(str = ++sep; *str; str[-1] = *str, ++str);
+		str[-1] = 0;
+		
+		/*skip the current pair of commas*/
+		++sep;
+		}
+	
+	/*If the control sequence has been found present*/
+	if(sep)
+		{
+		/*copy the name*/
+		/*just copy the pointer*/
+		char * name_cpy = /*strdup*/(name);
+		if(!name_cpy)
+			{
+			err = ENOMEM;
+			finalize();
+			return err;
+			}
+			
+		/*move sep to name_cpy*/
+		sep = name_cpy + (sep - name);
+		
+		/*remove the separator from the string*/
+		*(sep++) = 0;
+		*(sep++) = 0;
+		
+		/*try to lookup a node with the specified name*/
+		err = lookup(name_cpy);
 		if(err)
 			{
 			finalize();
 			return err;
 			}
 		
-		/*install the new lnode into the directory*/
-		lnode_install(dir->nn->lnode, lnode);
+		/*duplicate the part of the name containing the list of translators
+			and store the copy in the lnode*/
+		lnode->trans = strdup(sep);
+		if(!lnode->trans)
+			{
+			finalize();
+			return err;
+			}
+
+		/*free the copy of the name*/
+		/*we've just copied the pointer, so don't free it*/
+		/*free(name_cpy);*/
+		
+		/*obtain a pointer to the beginning of the list of translators*/
+		str = lnode->trans;
+		
+		/*used to process escaped commas*/
+		/*char * p;*/
+		
+		/*Go through the list of translators*/
+		for(lnode->ntrans = 0; *str; ++str)
+			{
+			/*Commas are not allowed in translator names*/
+#if 0
+			/*If we are now situated at an escaped comma*/
+			if((*str == '\\') && (str[1] == ','))
+				{
+				/*shift everything left in the string to remove the escaping backslash*/
+				for(p = str; *p; *p = p[1], ++p);
+				
+				/*count a single character and step forward*/
+				++lnode->translen;
+				continue;
+				}
+#endif
+
+			/*If the current character is a comma*/
+			if(*str == ',')
+				{
+				/*make it a separator zero*/
+				*str = 0;
+				
+				/*we have just finished going through a new component*/
+				++lnode->ntrans;
+				}
+				
+			/*take the current character into account*/
+			++lnode->translen;
+			}
+			
+		/*take into consideration the last element in the list,
+			which does not end in a comma and the corresponding terminal 0*/
+		++lnode->ntrans;
+		++lnode->translen;
+		}
+	/*The control sequence ',,' has not been found*/
+	else
+		{
+		/*simply lookup the provided name*/
+		err = lookup(name);
+		if(err)
+			{
+			finalize();
+			return err;
+			}
 		}
 	
-	/*Obtain the node corresponding to this lnode*/
-	err = ncache_node_lookup(lnode, node);
+	/*The list of translators inherited from its ancestors*/
+	char * trans;
 	
-	/*Remove an extra reference from the lnode*/
-	lnode_ref_remove(lnode);
+	/*the number of translators*/
+	size_t ntrans;
 	
-	/*If the lookup in the cache failed*/
+	/*Obtain the list of inherited translators*/
+	err = lnode_list_translators(lnode, &trans, &ntrans);
 	if(err)
 		{
-		/*stop*/
 		finalize();
 		return err;
 		}
 
-	/*Store the port in the node*/
-	(*node)->nn->port = p;
-
-	/*Construct the full path to the node*/
-	err = lnode_path_construct(lnode, NULL);
-	if(err)
+	/*If no translators have to be set*/
+	if(ntrans == 0)
 		{
+		/*we have looked up what we need*/
 		finalize();
-		return err;
+		return 0;
 		}
-	
-	/*Now the node is up-to-date*/
-	(*node)->nn->flags = FLAG_NODE_ULFS_UPTODATE;
 
-	/*Return the result of performing the operations*/
+	int i;
+
+	/*If there is a port open for the current node*/
+	if((*node)->nn->port != MACH_PORT_NULL)
+		{
+		/*close the port, since we will open it when starting translators*/
+		PORT_DEALLOC((*node)->nn->port);
+		}
+
+	/*Opens a port to the file at the request of fshelp_start_translator*/
+	error_t
+	open_port
+		(
+		int flags,
+		mach_port_t * underlying,
+		mach_msg_type_name_t * underlying_type,
+		task_t task,
+		void * cookie	/*some additional information, not used here*/
+		)
+		{
+		/*Lookup the file we are working with*/
+		p = file_name_lookup_under
+			(dir->nn->port, (*node)->nn->lnode->name, flags, 0);
+		if(p == MACH_PORT_NULL)
+			return errno;
+			
+		/*Store the result in the parameters*/
+		*underlying = p;
+		*underlying_type = MACH_MSG_TYPE_COPY_SEND;
+		
+		/*Here everything is OK*/
+		return 0;
+		}/*open_port*/
+
+	/*Adds a "/hurd/" at the beginning of the translator name, if required*/
+	char *
+	put_in_hurd
+		(
+		char * name
+		)
+		{
+		/*If the path to the translator is absolute, return a copy of the name*/
+		/*TODO: A better decision technique on whether we have to add the prefix*/
+		if(name[0] == '/')
+			return strdup(name);
+		
+		/*Compute the length of the name*/
+		size_t len = strlen(name);
+		
+		/*Try to allocate new memory*/
+		char * full = malloc(6/*strlen("/hurd/")*/ + len + 1);
+		if(!full)
+			return NULL;
+		
+		/*Construct the name*/
+		strcpy(full, "/hurd/");
+		strcpy(full + 6, name);
+		full[6 + len] = 0;
+		
+		/*Return the full path*/
+		return full;
+		}/*put_in_hurd*/
+
+	/*A copy (possibly extended) of the name of the translator*/
+	char * ext;
+
+	/*The length of the current component in the list of translators*/
+	size_t complen;
+
+	/*The holders of argz-transformed translator name and arguments*/
+	char * argz = NULL;
+	size_t argz_len = 0;
+
+	/*The control port for the active translator*/
+	mach_port_t active_control;
+
+	/*Go through the list of translators*/
+	for(str = trans, i = 0; i < ntrans; ++i)
+		{
+		/*obtain the length of the current component*/
+		complen = strlen(str);
+		
+		/*obtain a copy (possibly extended) of the name*/
+		ext = put_in_hurd(str);
+		if(!ext)
+			{
+			err = ENOMEM;
+			finalize();
+			return err;
+			}
+		
+		/*TODO: Better argument-parsing?*/
+		
+		/*obtain the argz version of str*/
+		err = argz_create_sep(ext, ' ', &argz, &argz_len);
+		if(err)
+			{
+			finalize();
+			return err;
+			}
+		
+		/*start the translator*/
+		err = fshelp_start_translator
+			(
+			open_port, NULL, argz, argz, argz_len,
+			60000,/*this is the default in settrans*/
+			&active_control
+			);
+		if(err)
+			{
+			finalize();
+			return err;
+			}
+		
+		/*attempt to set a translator on the port opened by the previous call*/
+		err = file_set_translator
+			(
+			p, 0, FS_TRANS_SET, 0, argz, argz_len,
+			active_control, MACH_MSG_TYPE_COPY_SEND
+			);
+		if(err)
+			{
+			finalize();
+			return err;
+			}
+		
+		/*deallocate the port we have just opened*/
+		PORT_DEALLOC(p);
+
+		/*skip the current component*/
+		str += complen + 1;
+		}
+
+	/*Everything OK here*/
 	finalize();
 	return err;
 	}/*netfs_attempt_lookup*/
@@ -981,9 +1289,23 @@ netfs_attempt_read
 		/*store the port in the node*/
 		np->nn->port = p;
 		}
+	
+	/*Obtain a pointer to the first byte of the supplied buffer*/
+	char * buf = data;
+	
+	/*Try to read the requested information from the file*/
+	err = io_read(np->nn->port, &buf, len, offset, *len);
+	
+	/*If some data has been read successfully*/
+	if(!err && (buf != data))
+		{
+		/*copy the data from the buffer into which is has been read into the
+			supplied receiver*/
+		memcpy(data, buf, *len);
 		
-	/*Read the required data from the file*/
-	err = io_read(np->nn->port, (char **)&data, len, offset, *len);
+		/*unmap the new buffer*/
+		munmap(buf, *len);
+		}
 
 	/*Return the result of reading*/
 	return err;
