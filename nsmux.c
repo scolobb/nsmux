@@ -31,20 +31,12 @@
 /*----------------------------------------------------------------------------*/
 #include <error.h>
 #include <argp.h>
-#include <argz.h>
 #include <hurd/netfs.h>
 #include <fcntl.h>
 /*----------------------------------------------------------------------------*/
 #include "debug.h"
 #include "options.h"
 #include "ncache.h"
-/*----------------------------------------------------------------------------*/
-
-/*----------------------------------------------------------------------------*/
-/*--------Macros--------------------------------------------------------------*/
-/*The state modes use in open*/
-#define OPENONLY_STATE_MODES (O_CREAT | O_EXCL | O_NOLINK | O_NOTRANS \
-	| O_NONBLOCK)
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
@@ -520,6 +512,7 @@ netfs_attempt_lookup
 	LOG_MSG("netfs_attempt_lookup: '%s'", name);
 
 	error_t err = 0;
+	int i = 0;
 
 	/*If we are asked to fetch the current directory*/
 	if(strcmp(name, ".") == 0)
@@ -564,10 +557,32 @@ netfs_attempt_lookup
 	/*The lnode corresponding to the entry we are supposed to fetch*/
 	lnode_t * lnode;
 	
+	/*The position of ',,' in the name*/
+	char * sep;
+	
+	/*A pointer for various operations on strings*/
+	char * str;
+
+	/*A list of translators*/
+	char * trans = NULL;
+	
+	/*The number of translators in the list*/
+	size_t ntrans;
+	
+	/*The length of the list of translators*/
+	size_t translen;
+	
+	/*Is the looked up file a directory*/
+	int isdir;
+	
 	/*Finalizes the execution of this function*/
 	void
 	finalize(void)
 		{
+		/*Free the list of translators, if it has been allocated*/
+		if(trans)
+			free(trans);
+
 		/*If some errors have occurred*/
 		if(err)
 			{
@@ -625,6 +640,9 @@ netfs_attempt_lookup
 			{
 			/*do not set the port*/
 			p = MACH_PORT_NULL;
+			
+			/*remember we do not have a directory*/
+			isdir = 0;
 			}
 		else
 			{
@@ -634,6 +652,9 @@ netfs_attempt_lookup
 				{
 				return EBADF; /*not enough rights?*/
 				}
+				
+			/*we have a directory here*/
+			isdir = 1;
 			}
 
 		/*Try to find an lnode called `name` under the lnode corresponding to `dir`*/
@@ -653,28 +674,13 @@ netfs_attempt_lookup
 			/*install the new lnode into the directory*/
 			lnode_install(dir->nn->lnode, lnode);
 			}
-		else
-			{
-			/*TODO: Remove the code from here and put it into the caller block,
-				so that we can decide there whether to remove translators and
-				*which* ones to remove*/
-
-			/*free the list of translators associated with this node, if
-				such a list exists*/
-			if(lnode->trans)
-				{
-				free(lnode->trans);
-				lnode->trans = NULL;
-				lnode->ntrans = lnode->translen = 0;
-				}
-			}
-	
+		
 		/*Obtain the node corresponding to this lnode*/
 		err = ncache_node_lookup(lnode, node);
 	
 		/*Remove an extra reference from the lnode*/
 		lnode_ref_remove(lnode);
-	
+		
 		/*If the lookup in the cache failed*/
 		if(err)
 			{
@@ -686,6 +692,12 @@ netfs_attempt_lookup
 		/*Store the port in the node*/
 		(*node)->nn->port = p;
 
+		/*Fill in the flag about the node being a directory*/
+		if(isdir)
+			lnode->flags |= FLAG_LNODE_DIR;
+		else
+			lnode->flags &= ~FLAG_LNODE_DIR;
+	
 		/*Construct the full path to the node*/
 		err = lnode_path_construct(lnode, NULL);
 		if(err)
@@ -701,12 +713,6 @@ netfs_attempt_lookup
 		return 0;
 		}/*lookup*/
 
-	/*The position of ',,' in the name*/
-	char * sep;
-	
-	/*A pointer for various operations on strings*/
-	char * str;
-	
 	/*While pairs of commas can still be found in the name*/
 	for(sep = strstr(name, ",,"); sep; sep = strstr(sep, ",,"))
 		{
@@ -760,58 +766,219 @@ netfs_attempt_lookup
 		
 		/*duplicate the part of the name containing the list of translators
 			and store the copy in the lnode*/
-		lnode->trans = strdup(sep);
-		if(!lnode->trans)
+		trans = strdup(sep);
+		if(!trans)
 			{
 			finalize();
 			return err;
 			}
 
-		/*free the copy of the name*/
-		/*we've just copied the pointer, so don't free it*/
-		/*free(name_cpy);*/
-		
 		/*obtain a pointer to the beginning of the list of translators*/
-		str = lnode->trans;
+		str = trans;
 		
-		/*used to process escaped commas*/
-		/*char * p;*/
+		/*a pointer for removal of extra commas*/
+		char * p;
 		
 		/*Go through the list of translators*/
-		for(lnode->ntrans = 0; *str; ++str)
+		for(translen = ntrans = 0; *str; ++str)
 			{
-			/*Commas are not allowed in translator names*/
-#if 0
-			/*If we are now situated at an escaped comma*/
-			if((*str == '\\') && (str[1] == ','))
-				{
-				/*shift everything left in the string to remove the escaping backslash*/
-				for(p = str; *p; *p = p[1], ++p);
-				
-				/*count a single character and step forward*/
-				++lnode->translen;
-				continue;
-				}
-#endif
-
 			/*If the current character is a comma*/
 			if(*str == ',')
 				{
+				/*While the next characters are commas, too*/
+				for(; str[1] == ',';)
+					{
+					/*shift the string leftwards*/
+					for(p = str + 1; *p; p[-1] = *p, ++p);
+					p[-1] = 0;
+					}
+					
+				/*If the next character is the terminal 0*/
+				if(!str[1])
+					{
+					/*this comma is extra*/
+					*str = 0;
+					break;
+					}
+
 				/*make it a separator zero*/
 				*str = 0;
 				
 				/*we have just finished going through a new component*/
-				++lnode->ntrans;
+				++ntrans;
 				}
 				
 			/*take the current character into account*/
-			++lnode->translen;
+			++translen;
 			}
 			
 		/*take into consideration the last element in the list,
 			which does not end in a comma and the corresponding terminal 0*/
-		++lnode->ntrans;
-		++lnode->translen;
+		++ntrans;
+		++translen;
+		
+		/*If there are no translators set upon the current node*/
+		if(!lnode->trans)
+			{
+			/*copy the list of translators we have just built in the lnode*/
+			lnode->trans		= trans;
+			lnode->ntrans		= ntrans;
+			lnode->translen	= translen;
+			
+			/*If the node has already been fully translated before and it's
+				not a directory*/
+			/*We don't need to set the whole collection of translators,
+				both inherited and the ones in lnode->trans. The latter
+				are only necessary. Directories, on the other hand, cannot
+				bear translators on them.*/
+			if
+				(
+				(lnode->flags & FLAG_LNODE_TRANSLATED)
+				&& !(lnode->flags & FLAG_LNODE_DIR)
+				)
+				{
+				/*Go through the list of translators*/
+				for(str = trans, i = 0; i < ntrans; ++i)
+					{
+					/*set the translator specified in the current component*/
+					err = node_set_translator(dir, *node, str);
+					if(err)
+						{
+						finalize();
+						return 0; /*TODO: A better way to fight errors here*/
+						}
+					
+					/*skip the current component*/
+					str += strlen(str) + 1;
+					}
+
+				/*we don't own the list of translators any more*/
+				trans = NULL;
+				ntrans = 0;
+				translen = 0;
+			
+				/*here the lookup is successful*/
+				err = 0;
+				finalize();
+				return err;
+				}
+			
+			/*we don't own the list of translators any more*/
+			trans = NULL;
+			ntrans = 0;
+			translen = 0;
+			}
+		else
+			{
+			/*If the current node is not a directory*/
+			if(!isdir)
+				{
+				/*obtain the minimal of the lengths of the lists of translators*/
+				size_t minlen =
+					(translen < lnode->translen) ? (translen) : (lnode->translen);
+					
+				/*the number of similar translators*/
+				size_t similar = 0;
+				
+				/*the current position in the list*/
+				size_t i;
+			
+				/*Go through the lists of translators*/
+				for(i = 0; i < minlen; ++i)
+					{
+					/*If the current characters are different, stop here*/
+					if(trans[i] != lnode->trans[i])
+						break;
+				
+					/*If the current character marks the end of a translator name*/
+					if(trans[i] == 0)
+						/*one more matching translator*/
+						++similar;
+					}
+			
+				/*While all not matching translators have not been removed*/
+				size_t j;
+				for(j = 0; j < lnode->ntrans - similar; ++j)
+					{
+					/*remove one more translator*/
+					err = node_kill_translator(dir, *node);
+					if(err)
+						{
+						finalize();
+						return err;
+						}
+					}
+					
+				/*obtain the pointer to the first not matching position*/
+				str = trans + i;
+				
+				/*seek to the beginning of the current translator name*/
+				for(; (str > trans) && *str; --str);
+				
+				/*While the required new translators have not been set*/
+				for(i = 0; i < ntrans - similar; ++i)
+					{
+					/*set the current translator on the file*/
+					err = node_set_translator(dir, *node, str);
+					if(err)
+						{
+						finalize();
+						return err;
+						}
+						
+					/*skip the current translator*/
+					str += strlen(str) + 1;
+					}
+				}
+			/*We have looked up a directory*/
+			else
+				{
+				/*If the length of the lists of translators are the same*/
+				if((lnode->translen = translen) && (lnode->ntrans == ntrans))
+					{
+					/*check each character of the list of translators*/
+					int i;
+					for(i = 0; (i < translen) && (lnode->trans[i] == trans[i]); ++i);
+					
+					/*If the lists coincide*/
+					if(i == translen)
+						{
+						/*the lookup has finished successfully here*/
+						err = 0;
+						finalize();
+						return err;
+						}
+					}
+				
+				/*unlock the directory in which we are at the moment*/
+				mutex_unlock(&dir->lock);
+				
+				/*kill all translators on all children of this node*/
+				node_kill_all_translators(*node);
+				
+				/*lock the directory back*/
+				mutex_lock(&dir->lock);
+				}
+				
+			/*destroy the list of translators in the current node*/
+			free(lnode->trans);
+			
+			/*put the new list in the node*/
+			lnode->trans		= trans;
+			lnode->ntrans 	= ntrans;
+			lnode->translen	= translen;
+			
+			/*all required translators have been already applied on this node*/
+			/*lnode->flags |= FLAG_LNODE_TRANSLATED;*/
+			
+			/*we don't own the list of translators any more*/
+			trans = NULL;
+
+			/*the lookup is already finished here*/
+			err = 0;
+			finalize();
+			return err;
+			}
 		}
 	/*The control sequence ',,' has not been found*/
 	else
@@ -823,14 +990,51 @@ netfs_attempt_lookup
 			finalize();
 			return err;
 			}
+
+		/*If there are some translators set on this file*/
+		if(lnode->trans)
+			{
+			/*unlock the directory*/
+			mutex_unlock(&dir->lock);
+			
+			/*kill all translators on this node*/
+			node_kill_all_translators(*node);
+			
+			/*lock the directory again*/
+			mutex_lock(&dir->lock);
+
+			/*all translators have been succesfully set here*/
+			/*lnode->flags |= FLAG_LNODE_TRANSLATED;*/
+			
+			/*the lookup has finished successfully here*/
+			/*The translators inherited from parents survive throughout
+				the previous loop*/
+			err = 0;
+			finalize();
+			return err;
+			}
 		}
 	
-	/*The list of translators inherited from its ancestors*/
-	char * trans;
-	
-	/*the number of translators*/
-	size_t ntrans;
-	
+	/*If we have a directory*/
+	if(isdir)
+		{
+		/*FIXME: It means we've got a directory, and no translators are set on
+			directories. The point is that nsmux should mainly handle libtrivs-based
+			translators, which should not operate on directories.*/
+		err = 0;
+		finalize();
+		return err;
+		}
+
+	/*If the current node has already been successfully translated*/
+	if(lnode->flags & FLAG_LNODE_TRANSLATED)
+		{
+		/*no additional translators must set on this file*/
+		err = 0;
+		finalize();
+		return err;
+		}
+
 	/*Obtain the list of inherited translators*/
 	err = lnode_list_translators(lnode, &trans, &ntrans);
 	if(err)
@@ -847,138 +1051,23 @@ netfs_attempt_lookup
 		return 0;
 		}
 
-	int i;
-
-	/*If there is a port open for the current node*/
-	if((*node)->nn->port != MACH_PORT_NULL)
-		{
-		/*close the port, since we will open it when starting translators*/
-		PORT_DEALLOC((*node)->nn->port);
-		}
-
-	/*Opens a port to the file at the request of fshelp_start_translator*/
-	error_t
-	open_port
-		(
-		int flags,
-		mach_port_t * underlying,
-		mach_msg_type_name_t * underlying_type,
-		task_t task,
-		void * cookie	/*some additional information, not used here*/
-		)
-		{
-		/*Lookup the file we are working with*/
-		p = file_name_lookup_under
-			(dir->nn->port, (*node)->nn->lnode->name, flags, 0);
-		if(p == MACH_PORT_NULL)
-			return errno;
-			
-		/*Store the result in the parameters*/
-		*underlying = p;
-		*underlying_type = MACH_MSG_TYPE_COPY_SEND;
-		
-		/*Here everything is OK*/
-		return 0;
-		}/*open_port*/
-
-	/*Adds a "/hurd/" at the beginning of the translator name, if required*/
-	char *
-	put_in_hurd
-		(
-		char * name
-		)
-		{
-		/*If the path to the translator is absolute, return a copy of the name*/
-		/*TODO: A better decision technique on whether we have to add the prefix*/
-		if(name[0] == '/')
-			return strdup(name);
-		
-		/*Compute the length of the name*/
-		size_t len = strlen(name);
-		
-		/*Try to allocate new memory*/
-		char * full = malloc(6/*strlen("/hurd/")*/ + len + 1);
-		if(!full)
-			return NULL;
-		
-		/*Construct the name*/
-		strcpy(full, "/hurd/");
-		strcpy(full + 6, name);
-		full[6 + len] = 0;
-		
-		/*Return the full path*/
-		return full;
-		}/*put_in_hurd*/
-
-	/*A copy (possibly extended) of the name of the translator*/
-	char * ext;
-
-	/*The length of the current component in the list of translators*/
-	size_t complen;
-
-	/*The holders of argz-transformed translator name and arguments*/
-	char * argz = NULL;
-	size_t argz_len = 0;
-
-	/*The control port for the active translator*/
-	mach_port_t active_control;
-
 	/*Go through the list of translators*/
 	for(str = trans, i = 0; i < ntrans; ++i)
 		{
-		/*obtain the length of the current component*/
-		complen = strlen(str);
-		
-		/*obtain a copy (possibly extended) of the name*/
-		ext = put_in_hurd(str);
-		if(!ext)
-			{
-			err = ENOMEM;
-			finalize();
-			return err;
-			}
-		
-		/*TODO: Better argument-parsing?*/
-		
-		/*obtain the argz version of str*/
-		err = argz_create_sep(ext, ' ', &argz, &argz_len);
+		/*set the translator specified in the current component*/
+		err = node_set_translator(dir, *node, str);
 		if(err)
 			{
 			finalize();
-			return err;
+			return 0; /*TODO: A better way to fight errors here*/
 			}
-		
-		/*start the translator*/
-		err = fshelp_start_translator
-			(
-			open_port, NULL, argz, argz, argz_len,
-			60000,/*this is the default in settrans*/
-			&active_control
-			);
-		if(err)
-			{
-			finalize();
-			return err;
-			}
-		
-		/*attempt to set a translator on the port opened by the previous call*/
-		err = file_set_translator
-			(
-			p, 0, FS_TRANS_SET, 0, argz, argz_len,
-			active_control, MACH_MSG_TYPE_COPY_SEND
-			);
-		if(err)
-			{
-			finalize();
-			return err;
-			}
-		
-		/*deallocate the port we have just opened*/
-		PORT_DEALLOC(p);
-
+	
 		/*skip the current component*/
-		str += complen + 1;
+		str += strlen(str) + 1;
 		}
+
+	/*All translators have been succesfully set on this node*/
+	lnode->flags |= FLAG_LNODE_TRANSLATED;
 
 	/*Everything OK here*/
 	finalize();

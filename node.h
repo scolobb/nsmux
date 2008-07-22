@@ -165,4 +165,33 @@ node_unlink_file
 	char * name
 	);
 /*----------------------------------------------------------------------------*/
+/*Sets the given translator on the supplied node*/
+/*This function will normally be called from netfs_attempt_lookup, therefore
+	it's better that the caller should provide the parent node for `node`.*/
+error_t
+node_set_translator
+	(
+	node_t * dir,
+	node_t * node,
+	const char * trans	/*set this on `name`*/
+	);
+/*----------------------------------------------------------------------------*/
+/*Kill the topmost translator for this node*/
+/*This function will normally be called from netfs_attempt_lookup, therefore
+	it's better that the caller should provide the parent node for `node`.*/
+error_t
+node_kill_translator
+	(
+	node_t * dir,
+	node_t * node
+	);
+/*----------------------------------------------------------------------------*/
+/*Kills all translators on the current node or on all underlying nodes it the
+	current node is a directory*/
+void
+node_kill_all_translators
+	(
+	node_t * node
+	);
+/*----------------------------------------------------------------------------*/
 #endif /*__NODE_H__*/

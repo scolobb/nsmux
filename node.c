@@ -32,12 +32,14 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <stdio.h>
+#include <argz.h>
 /*----------------------------------------------------------------------------*/
 #include "debug.h"
 #include "node.h"
 #include "options.h"
 #include "lib.h"
 #include "nsmux.h"
+#include "ncache.h"
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
@@ -111,7 +113,16 @@ node_destroy
 	assert(!np->nn->ncache_next || !np->nn->ncache_prev);
 	
 	/*Destroy the port to the underlying filesystem allocated to the node*/
-	PORT_DEALLOC(np->nn->port);
+	if(np->nn->port != MACH_PORT_NULL)
+		PORT_DEALLOC(np->nn->port);
+	
+	/*If the given node is not the root node and there are translators
+		to kill*/
+	if(np->nn->lnode->dir && np->nn->lnode->trans)
+		{
+		/*kill all translators on the underlying nodes*/
+		node_kill_all_translators(np);
+		}
 	
 	/*Lock the lnode corresponding to the current node*/
 	mutex_lock(&np->nn->lnode->lock);
@@ -620,4 +631,220 @@ node_unlink_file
 	
 	return err;
 	}/*node_unlink_file*/
+/*----------------------------------------------------------------------------*/
+/*Sets the given translator on the supplied node*/
+/*This function will normally be called from netfs_attempt_lookup, therefore
+	it's better that the caller should provide the parent node for `node`.*/
+error_t
+node_set_translator
+	(
+	node_t * dir,
+	node_t * node,
+	const char * trans	/*set this on `name`*/
+	)
+	{
+	error_t err;
+	
+	/*A port for opened to the file*/
+	mach_port_t p;
+
+	/*A copy (possibly extended) of the name of the translator*/
+	char * ext;
+	
+	/*The holders of argz-transformed translator name and arguments*/
+	char * argz = NULL;
+	size_t argz_len = 0;
+
+	/*The control port for the active translator*/
+	mach_port_t active_control;
+
+	/*Opens a port to the file at the request of fshelp_start_translator*/
+	error_t
+	open_port
+		(
+		int flags,
+		mach_port_t * underlying,
+		mach_msg_type_name_t * underlying_type,
+		task_t task,
+		void * cookie	/*some additional information, not used here*/
+		)
+		{
+		/*Lookup the file we are working with*/
+		p = file_name_lookup_under
+			(dir->nn->port, node->nn->lnode->name, flags, 0);
+		if(p == MACH_PORT_NULL)
+			return errno;
+			
+		/*Store the result in the parameters*/
+		*underlying = p;
+		*underlying_type = MACH_MSG_TYPE_COPY_SEND;
+		
+		/*Here everything is OK*/
+		return 0;
+		}/*open_port*/
+
+	/*Adds a "/hurd/" at the beginning of the translator name, if required*/
+	char *
+	put_in_hurd
+		(
+		const char * name
+		)
+		{
+		/*If the path to the translator is absolute, return a copy of the name*/
+		/*TODO: A better decision technique on whether we have to add the prefix*/
+		if(name[0] == '/')
+			return strdup(name);
+		
+		/*Compute the length of the name*/
+		size_t len = strlen(name);
+		
+		/*Try to allocate new memory*/
+		char * full = malloc(6/*strlen("/hurd/")*/ + len + 1);
+		if(!full)
+			return NULL;
+		
+		/*Construct the name*/
+		strcpy(full, "/hurd/");
+		/*LOG_MSG("node_set_translator: %s", full);*/
+		strcpy(full + 6, name);
+		/*LOG_MSG("node_set_translator: %s", full);*/
+		full[6 + len] = 0;
+		/*LOG_MSG("node_set_translator: %s", full);*/
+		
+		/*Return the full path*/
+		return full;
+		}/*put_in_hurd*/
+	
+	/*Obtain a copy (possibly extended) of the name*/
+	ext = put_in_hurd(trans);
+	if(!ext)
+		return ENOMEM;
+	
+	/*TODO: Better argument-parsing?*/
+	
+	/*Obtain the argz version of str*/
+	err = argz_create_sep(ext, ' ', &argz, &argz_len);
+	if(err)
+		return err;
+	
+	/*Start the translator*/
+	err = fshelp_start_translator
+		(
+		open_port, NULL, argz, argz, argz_len,
+		60000,/*this is the default in settrans*/
+		&active_control
+		);
+	if(err)
+		return err;
+	
+	/*Attempt to set a translator on the port opened by the previous call*/
+	err = file_set_translator
+		(
+		p, 0, FS_TRANS_SET, 0, argz, argz_len,
+		active_control, MACH_MSG_TYPE_COPY_SEND
+		);
+	if(err)
+		return err;
+	
+	/*Deallocate the port we have just opened*/
+	PORT_DEALLOC(p);
+	
+	/*Everything is OK here*/
+	return 0;
+	}/*node_set_translator*/
+/*----------------------------------------------------------------------------*/
+/*Kill the topmost translator for this node*/
+/*This function will normally be called from netfs_attempt_lookup, therefore
+	it's better that the caller should provide the parent node for `node`.*/
+error_t
+node_kill_translator
+	(
+	node_t * dir,
+	node_t * node
+	)
+	{
+	/*Lookup the file*/
+	mach_port_t p =
+		file_name_lookup_under(dir->nn->port, node->nn->lnode->name, O_NOTRANS, 0);
+
+	/*Remove a translator from the node*/
+	error_t err = file_set_translator
+		(
+		p, FS_TRANS_SET, FS_TRANS_SET, 0, NULL, 0,
+		MACH_PORT_NULL, MACH_MSG_TYPE_COPY_SEND
+		);
+	
+	/*Close the port*/
+	PORT_DEALLOC(p);
+	
+	/*Return the result of removing the translator*/
+	return err;
+	}/*node_kill_translator*/
+/*----------------------------------------------------------------------------*/
+/*Kills all translators on the nodes belonging to the given directory*/
+void
+node_kill_all_translators
+	(
+	node_t * node
+	)
+	{
+	/*Goes through all children of the given node recursively*/
+	void
+	traverse_children_r
+		(
+		node_t * dir,
+		node_t * np,
+		size_t ntrans	/*the number of translators to remove from all nodes*/
+		)
+		{
+		int i;
+
+		/*A child of the current node*/
+		lnode_t * ln = np->nn->lnode;
+		
+		/*If the current node is not a directory*/
+		if(!(ln->flags & FLAG_LNODE_DIR))
+			{
+			/*remove the required number of translators from the current node*/
+			for(i = 0; i < ntrans + ln->ntrans; ++i)
+				node_kill_translator(dir, np);
+			}
+		else
+			/*Go through the list of entries belonging to this directory*/
+			for(ln = ln->entries; ln; ln = ln->next)
+				{
+				/*die, if there is no node corresponding to the current child*/
+				/*This is abnormal, because lnodes should normally go away shortly
+					after the destruction of correpsonding nodes*/
+				assert(ln->node);
+				
+				/*kill translators for this node*/
+				traverse_children_r(np, ln->node, ntrans + ln->ntrans);
+				}
+			
+		/*Obtain a pointer to the lnode corresponding to np*/
+		ln = np->nn->lnode;
+		
+		/*Destroy the list of translators*/
+		if(ln->trans)
+			free(ln->trans);
+			
+		/*No more translators on this node*/
+		ln->trans = NULL;
+		ln->ntrans = ln->translen = 0;
+		
+		/*There are no translators on this node*/
+		ln->flags &= ~FLAG_LNODE_TRANSLATED;
+		}/*traverse_children_r*/
+
+	/*Obtain the pointer to the parent node of the current node*/
+	node_t * dnp;
+	ncache_node_lookup(node->nn->lnode->dir, &dnp);
+	
+	/*Kill all translators on the current node*/
+	traverse_children_r(dnp, node, node->nn->lnode->ntrans);
+	
+	/*Unlock the parent node*/
+	mutex_unlock(&dnp->lock);
+	}/*node_kill_all_translators*/
 /*----------------------------------------------------------------------------*/

@@ -138,6 +138,10 @@ lnode_destroy
 	/*Destroy the name of the node*/
 	free(node->name);
 	
+	/*If there is a list of translators*/
+	if(node->trans)
+		free(node->trans);
+	
 	/*Destroy the node itself*/
 	free(node);
 	}/*lnode_destroy*/
