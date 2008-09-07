@@ -1693,7 +1693,8 @@ netfs_attempt_write
 	void * data
 	)
 	{
-	return 0;
+	/*Write the supplied data into the file and return the result*/
+	return io_write(node->nn->port, data, *len, offset, len);
 	}/*netfs_attempt_write*/
 /*----------------------------------------------------------------------------*/
 /*Frees all storage associated with the node*/
