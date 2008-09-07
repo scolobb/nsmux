@@ -5,7 +5,7 @@
 /*----------------------------------------------------------------------------*/
 /*Based on the code of unionfs translator.*/
 /*----------------------------------------------------------------------------*/
-/*Copyright (C) 2001, 2002, 2005 Free Software Foundation, Inc.
+/*Copyright (C) 2001, 2002, 2005, 2008 Free Software Foundation, Inc.
   Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
 
   This program is free software; you can redistribute it and/or
@@ -29,6 +29,7 @@
 /*----------------------------------------------------------------------------*/
 #include "lnode.h"
 #include "debug.h"
+#include "node.h"
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
@@ -138,9 +139,19 @@ lnode_destroy
 	/*Destroy the name of the node*/
 	free(node->name);
 	
-	/*If there is a list of translators*/
-	if(node->trans)
-		free(node->trans);
+	/*While the list of proxies has not been freed*/
+	node_list_t p;
+	for(p = node->proxies; p;)
+		{
+		/*shift the pointer to the head of the list forward*/
+		node->proxies = node->proxies->next;
+
+		/*drop the current cell in the list*/
+		free(p);
+
+		/*store the current proxy*/
+		p = node->proxies;
+		}
 	
 	/*Destroy the node itself*/
 	free(node);
@@ -307,70 +318,111 @@ lnode_uninstall
 		node->next->prevp = &node->next;
 	}/*lnode_uninstall*/
 /*----------------------------------------------------------------------------*/
-/*Constructs a list of translators that were set on the ancestors of `node`*/
+/*Makes the specified lnode aware of another proxy. Both `node` and `proxy`
+	must be locked*/
 error_t
-lnode_list_translators
+lnode_add_proxy
 	(
 	lnode_t * node,
-	char ** trans,	/*the malloced list of 0-separated strings*/
-	size_t * ntrans	/*the number of elements in `trans`*/
+	node_t * proxy
 	)
 	{
-	/*The size of block of memory for the list of translators*/
-	size_t sz = 0;
-	
-	/*Used for tracing the lineage of `node`*/
-	lnode_t * ln = node;
-	
-	/*Used in computing the lengths of lists of translators in every node
-		we will go through and for constructing the final list of translators*/
-	char * p;
-	
-	/*The current position in *data (used in filling out the list of
-		translators)*/
-	char * transp;
-	
-	/*The length of the current translator name*/
-	size_t complen;
-	
-	size_t i;
-	
-	/*Trace the lineage of the `node` (including itself) and compute the
-		total length of the list of translators*/
-	for(; ln; sz += ln->translen, ln = ln->dir);
-	
-	/*Try to allocate a block of memory sufficient for storing the list of
-		translators*/
-	*trans = malloc(sz);
-	if(!*trans)
-		return ENOMEM;
-	
-	/*No translators at first*/
-	*ntrans = 0;
-	
-	/*Again trace the lineage of the `node` (including itself)*/
-	for(transp = *trans + sz, ln = node; ln; ln = ln->dir)
-		{
-		/*Go through each translator name in the list of names*/
-		for(i = 0, p = ln->trans + ln->translen - 2; i < ln->ntrans; ++i)
-			{
-			/*position p at the beginning of the current component and
-				compute its length at the same time*/
-			for(complen = 0; *p; --p, ++complen);
-			--p;
-			
-			/*move the current position backwards*/
-			transp -= complen + 1;
+	/*TODO: Make the list of proxies finite*/
 
-			/*copy the current translator name into the list*/
-			strcpy(transp, p + 2);
-			
-			/*we've got another translator*/
-			++*ntrans;
-			}
-		}
-		
-	/*Everything OK*/
+	/*Create an new cell in the list of proxies*/
+	node_list_t p = malloc(sizeof(node_list_t));
+	if(!p)
+		return ENOMEM;
+
+	/*If the supplied node references an lnode already
+		(this should always happen, though)*/
+	if(proxy->nn->lnode)
+		/*remove the reference held by the node to that lnode*/
+		lnode_ref_remove(proxy->nn->lnode);
+
+	/*Connect the proxy to the lnode*/
+	proxy->nn->lnode = node;
+
+	/*Store the pointer to the proxy in the new cell*/
+	p->node = proxy;
+	
+	/*Add the new cell to the list of proxies*/
+	p->next = node->proxies;
+	node->proxies = p;
+	
+	/*Count a new reference to this lnode*/
+	lnode_ref_add(node);
+	
+	/*Everything is OK here*/
 	return 0;
-	}/*lnode_list_translators*/
+	}/*lnode_add_proxy*/
+/*----------------------------------------------------------------------------*/
+/*Removes the specified proxy from the list of proxies of the supplied lnode.
+	`proxy` must not be locked*/
+void
+lnode_remove_proxy
+	(
+	lnode_t * node,
+	node_t * proxy
+	)
+	{
+	/*A pointer to a cell in the list of proxies*/
+	node_list_t p;
+
+	/*Lock the lnode*/
+	mutex_lock(&node->lock);
+
+	/*If the first cell in the list contains a reference to `proxy`*/
+	if(node->proxies->node == proxy)
+		{
+		/*store a pointer to the head of the list*/
+		p = node->proxies;
+		
+		/*shift the head of the list forward*/
+		node->proxies = node->proxies->next;
+		
+		/*destroy the former head*/
+		free(p);
+		
+		/*remove a reference from the supplied lnode*/
+		lnode_ref_remove(node);
+		
+		/*stop right here*/
+		mutex_unlock(&node->lock);
+		return;
+		}
+
+	/*Another pointer to a cell in the list*/
+	node_list_t q;
+
+	/*Go through the list of proxy nodes of the given lnode*/
+	for(p = node->proxies; p->next; p = p->next)
+		{
+		/*If the next cell does not contain a reference to the same node,
+			as specified in the parameter, skip this entry*/
+		if(p->next->node != proxy)
+			continue;
+		
+		/*store a copy of the next element*/
+		q = p->next;
+		
+		/*unregister the next element from the list*/
+		p->next = q->next;
+		
+		/*remove the unregistered element*/
+		free(q);
+		
+		/*stop looping*/
+		break;
+		}
+
+	/*Remove a reference from the supplied lnode*/
+	lnode_ref_remove(node);
+		
+	
+	/*Unlock the node*/
+	mutex_unlock(&node->lock);
+	
+	return;
+	}/*lnode_remove_proxy*/
 /*----------------------------------------------------------------------------*/

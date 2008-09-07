@@ -5,7 +5,7 @@
 /*----------------------------------------------------------------------------*/
 /*Based on the code of unionfs translator.*/
 /*----------------------------------------------------------------------------*/
-/*Copyright (C) 2001, 2002, 2005 Free Software Foundation, Inc.
+/*Copyright (C) 2001, 2002, 2005, 2008 Free Software Foundation, Inc.
   Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
 
   This program is free software; you can redistribute it and/or
@@ -47,6 +47,12 @@
 /*The inode number for the root node*/
 #define NSMUX_ROOT_INODE 1
 /*----------------------------------------------------------------------------*/
+/*The special flag character for creating proxy nodes*/
+#define LOOKUP_MAGIC_CHAR '\33'
+/*----------------------------------------------------------------------------*/
+/*Bits that are turned off after open*/
+#define OPENONLY_STATE_MODES (O_CREAT | O_EXCL | O_NOLINK | O_NOTRANS)
+/*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
 /*--------Global Variables----------------------------------------------------*/
@@ -59,6 +65,10 @@ extern mach_port_t underlying_node;
 /*----------------------------------------------------------------------------*/
 /*The stat information about the underlying node*/
 extern io_statbuf_t underlying_node_stat;
+/*----------------------------------------------------------------------------*/
+/*The translator callbacks required by netfs_S_dir_lookup*/
+fshelp_fetch_root_callback1_t _netfs_translator_callback1;
+fshelp_fetch_root_callback2_t _netfs_translator_callback2;
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
@@ -143,6 +153,37 @@ netfs_attempt_lookup
 	struct node * dir,
 	char * name,
 	struct node ** node
+	);
+/*----------------------------------------------------------------------------*/
+/*Performs an advanced lookup of file `name` under `dir`. If the lookup of the
+	last component of the path is requested (`lastcomp` is 1), it is not a
+	directory and no translators are required (`name` does not contain ',,'), the
+	function will simply open	the required file and return the port in `file`. In
+	other cases it will	create a proxy node and return it in `node`.*/
+error_t
+netfs_attempt_lookup_improved
+	(
+	struct iouser * user,
+	struct node * dir,
+	char * name,
+	int flags,
+	int lastcomp,
+	node_t ** node,
+	file_t * file
+	);
+/*----------------------------------------------------------------------------*/
+/*Responds to the RPC dir_lookup*/
+error_t
+netfs_S_dir_lookup
+	(
+	struct protid * diruser,
+	char * filename,
+	int flags,
+	mode_t mode,
+	retry_type * do_retry,
+	char * retry_name,
+	mach_port_t * retry_port,
+	mach_msg_type_number_t * retry_port_type
 	);
 /*----------------------------------------------------------------------------*/
 /*Deletes `name` in `dir` for `user`*/

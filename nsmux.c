@@ -5,7 +5,7 @@
 /*----------------------------------------------------------------------------*/
 /*Based on the code of unionfs translator.*/
 /*----------------------------------------------------------------------------*/
-/*Copyright (C) 2001, 2002, 2005 Free Software Foundation, Inc.
+/*Copyright (C) 2001, 2002, 2005, 2008 Free Software Foundation, Inc.
   Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
 
   This program is free software; you can redistribute it and/or
@@ -33,6 +33,7 @@
 #include <argp.h>
 #include <hurd/netfs.h>
 #include <fcntl.h>
+#include <hurd/paths.h>
 /*----------------------------------------------------------------------------*/
 #include "debug.h"
 #include "options.h"
@@ -99,18 +100,8 @@ netfs_check_open_permissions
 	{
 	LOG_MSG("netfs_check_open_permissions: '%s'", np->nn->lnode->name);
 
-	error_t err = 0;
-	
-	/*Cheks user's permissions*/
-	if(flags & O_READ)
-		err = fshelp_access(&np->nn_stat, S_IREAD, user);
-	if(!err && (flags & O_WRITE))
-		err = fshelp_access(&np->nn_stat, S_IWRITE, user);
-	if(!err && (flags & O_EXEC))
-		err = fshelp_access(&np->nn_stat, S_IEXEC, user);
-		
-	/*Return the result of the check*/
-	return err;
+	/*Cheks user's permissions and return the result*/
+	return check_open_permissions(user, &np->nn_stat, flags);
 	}/*netfs_check_open_permissions*/
 /*----------------------------------------------------------------------------*/
 /*Attempts an utimes call for the user `cred` on node `node`*/
@@ -194,7 +185,7 @@ netfs_validate_stat
 	struct iouser * cred
 	)
 	{
-	LOG_MSG("netfs_validate_stat: '%s'", np->nn->lnode->name);
+	LOG_MSG("netfs_validate_stat: '%s'", (np ? np->nn->lnode->name : ""));
 
 	error_t err = 0;
 	
@@ -219,6 +210,9 @@ netfs_validate_stat
 				
 				/*attempt to stat this file*/
 				err = io_stat(np->nn->port, &np->nn_stat);
+
+				if(S_ISDIR(np->nn_stat.st_mode))
+					LOG_MSG("\tIs a directory");
 
 				/*If stat information has been successfully obtained for the file*/
 				if(!err)
@@ -509,14 +503,53 @@ netfs_attempt_lookup
 	struct node ** node
 	)
 	{
-	LOG_MSG("netfs_attempt_lookup: '%s'", name);
+	LOG_MSG("netfs_attempt_lookup");
+
+	/*We should never get here. In any case, we do not want to do this type
+		of lookup, netfs_attempt_lookup_improved is what we want*/
+	return EOPNOTSUPP;
+	}/*netfs_attempt_lookup*/
+/*----------------------------------------------------------------------------*/
+/*Performs an advanced lookup of file `name` under `dir`. If the lookup of the
+	last component of the path is requested (`lastcomp` is 1), it is not a
+	directory and no translators are required (`name` does not contain ',,'), the
+	function will simply open	the required file and return the port in `file`. In
+	other cases it will	create a proxy node and return it in `node`.*/
+error_t
+netfs_attempt_lookup_improved
+	(
+	struct iouser * user,
+	struct node * dir,
+	char * name,
+	int flags,
+	int lastcomp,
+	node_t ** node,
+	file_t * file
+	)
+	{
+	LOG_MSG("netfs_attempt_lookup_improved: '%s'", name);
 
 	error_t err = 0;
-	int i = 0;
-
+	
 	/*If we are asked to fetch the current directory*/
 	if(strcmp(name, ".") == 0)
 		{
+		/*validate the stat information for `dir`*/
+		err = netfs_validate_stat(dir, user);
+		if(err)
+			{
+			mutex_unlock(&dir->lock);
+			return err;
+			}
+			
+		/*If `dir` is not a directory, actually*/
+		if(!S_ISDIR(dir->nn_stat.st_mode))
+			{
+			/*unlock the directory and stop right here*/
+			mutex_unlock(&dir->lock);
+			return ENOTDIR;
+			}
+
 		/*add a reference to `dir` and put it into `node`*/
 		netfs_nref(dir);
 		*node = dir;
@@ -527,6 +560,22 @@ netfs_attempt_lookup
 	/*If we are asked to fetch the parent directory*/
 	else if(strcmp(name, "..") == 0)
 		{
+		/*validate the stat information for `dir`*/
+		err = netfs_validate_stat(dir, user);
+		if(err)
+			{
+			mutex_unlock(&dir->lock);
+			return err;
+			}
+			
+		/*If `dir` is not a directory, actually*/
+		if(!S_ISDIR(dir->nn_stat.st_mode))
+			{
+			/*unlock the directory and stop right here*/
+			mutex_unlock(&dir->lock);
+			return ENOTDIR;
+			}
+
 		/*If the supplied node is not root*/
 		if(dir->nn->lnode->dir)
 			{
@@ -612,7 +661,9 @@ netfs_attempt_lookup
 	error_t
 	lookup
 		(
-		char * name	/*lookup this*/
+		char * name,	/*lookup this*/
+		int flags,		/*lookup `name` in the this way*/
+		int proxy			/*should a proxy node be created*/
 		)
 		{
 		/*Try to lookup the given file in the underlying directory*/
@@ -620,13 +671,8 @@ netfs_attempt_lookup
 	
 		/*If the lookup failed*/
 		if(p == MACH_PORT_NULL)
-			{
-			/*unlock the directory*/
-			mutex_unlock(&dir->lock);
-
 			/*no such entry*/
 			return ENOENT;
-			}
 
 		/*Obtain the stat information about the file*/
 		io_statbuf_t stat;
@@ -638,20 +684,25 @@ netfs_attempt_lookup
 		/*If this file is not a directory*/
 		if(err || !S_ISDIR(stat.st_mode))
 			{
-			/*do not set the port*/
-			p = MACH_PORT_NULL;
+			/*lookup the required file with the supplied flags*/
+			p = file_name_lookup_under(dir->nn->port, name, flags, 0);
+			if(p == MACH_PORT_NULL)
+				return EBADF;
 			
 			/*remember we do not have a directory*/
 			isdir = 0;
+			
+			/*If a proxy node is not required*/
+			if(!proxy)
+				/*stop here, we want only the port to the file*/
+				return 0;
 			}
 		else
 			{
 			/*lookup the port with the right to read the contents of the directory*/
 			p = file_name_lookup_under(dir->nn->port, name, O_READ | O_DIRECTORY, 0);
 			if(p == MACH_PORT_NULL)
-				{
 				return EBADF; /*not enough rights?*/
-				}
 				
 			/*we have a directory here*/
 			isdir = 1;
@@ -675,16 +726,25 @@ netfs_attempt_lookup
 			lnode_install(dir->nn->lnode, lnode);
 			}
 		
-		/*Obtain the node corresponding to this lnode*/
-		err = ncache_node_lookup(lnode, node);
+		/*If we are to create a proxy node*/
+		if(proxy)
+			/*create a proxy node from the given lnode*/
+			err = node_create_proxy(lnode, node);
+		/*If we don't need proxy nodes in this lookup*/
+		else
+			{
+			/*obtain the node corresponding to this lnode*/
+			err = ncache_node_lookup(lnode, node);
+
+			/*remove an extra reference from the lnode*/
+			lnode_ref_remove(lnode);
+			}
 	
-		/*Remove an extra reference from the lnode*/
-		lnode_ref_remove(lnode);
-		
-		/*If the lookup in the cache failed*/
+		/*If either the lookup in the cache or the creation of a proxy failed*/
 		if(err)
 			{
 			/*stop*/
+			mutex_unlock(&lnode->lock);
 			finalize();
 			return err;
 			}
@@ -702,9 +762,13 @@ netfs_attempt_lookup
 		err = lnode_path_construct(lnode, NULL);
 		if(err)
 			{
+			mutex_unlock(&lnode->lock);
 			finalize();
 			return err;
 			}
+	
+		/*Unlock the lnode*/
+		mutex_unlock(&lnode->lock);
 	
 		/*Now the node is up-to-date*/
 		(*node)->nn->flags = FLAG_NODE_ULFS_UPTODATE;
@@ -736,12 +800,15 @@ netfs_attempt_lookup
 		++sep;
 		}
 	
-	/*If the control sequence has been found present*/
+	/*If the control sequence has been found*/
 	if(sep)
 		{
+		/*the name of the file to lookup*/
+		char * name_cpy;
+
 		/*copy the name*/
 		/*just copy the pointer*/
-		char * name_cpy = /*strdup*/(name);
+		name_cpy = /*strdup*/(name);
 		if(!name_cpy)
 			{
 			err = ENOMEM;
@@ -756,12 +823,16 @@ netfs_attempt_lookup
 		*(sep++) = 0;
 		*(sep++) = 0;
 		
-		/*try to lookup a node with the specified name*/
-		err = lookup(name_cpy);
+		/*try to lookup the file with the specified name and create a proxy
+			node for it (since we need to start translators)*/
+		err = lookup(name_cpy, flags, 1);
+
+		/*If the lookup failed*/
 		if(err)
 			{
+			/*say that the file has not been found*/
 			finalize();
-			return err;
+			return ENOENT;
 			}
 		
 		/*duplicate the part of the name containing the list of translators
@@ -816,263 +887,500 @@ netfs_attempt_lookup
 			which does not end in a comma and the corresponding terminal 0*/
 		++ntrans;
 		++translen;
+
+		/*copy the list of translators we have just built in the new proxy node*/
+		(*node)->nn->trans		= trans;
+		(*node)->nn->ntrans		= ntrans;
+		(*node)->nn->translen	= translen;
 		
-		/*If there are no translators set upon the current node*/
-		if(!lnode->trans)
-			{
-			/*copy the list of translators we have just built in the lnode*/
-			lnode->trans		= trans;
-			lnode->ntrans		= ntrans;
-			lnode->translen	= translen;
-			
-			/*If the node has already been fully translated before and it's
-				not a directory*/
-			/*We don't need to set the whole collection of translators,
-				both inherited and the ones in lnode->trans. The latter
-				are only necessary. Directories, on the other hand, cannot
-				bear translators on them.*/
-			if
-				(
-				(lnode->flags & FLAG_LNODE_TRANSLATED)
-				&& !(lnode->flags & FLAG_LNODE_DIR)
-				)
-				{
-				/*Go through the list of translators*/
-				for(str = trans, i = 0; i < ntrans; ++i)
-					{
-					/*set the translator specified in the current component*/
-					err = node_set_translator(dir, *node, str);
-					if(err)
-						{
-						finalize();
-						return 0; /*TODO: A better way to fight errors here*/
-						}
-					
-					/*skip the current component*/
-					str += strlen(str) + 1;
-					}
-
-				/*we don't own the list of translators any more*/
-				trans = NULL;
-				ntrans = 0;
-				translen = 0;
-			
-				/*here the lookup is successful*/
-				err = 0;
-				finalize();
-				return err;
-				}
-			
-			/*we don't own the list of translators any more*/
-			trans = NULL;
-			ntrans = 0;
-			translen = 0;
-			}
-		else
-			{
-			/*If the current node is not a directory*/
-			if(!isdir)
-				{
-				/*obtain the minimal of the lengths of the lists of translators*/
-				size_t minlen =
-					(translen < lnode->translen) ? (translen) : (lnode->translen);
-					
-				/*the number of similar translators*/
-				size_t similar = 0;
-				
-				/*the current position in the list*/
-				size_t i;
-			
-				/*Go through the lists of translators*/
-				for(i = 0; i < minlen; ++i)
-					{
-					/*If the current characters are different, stop here*/
-					if(trans[i] != lnode->trans[i])
-						break;
-				
-					/*If the current character marks the end of a translator name*/
-					if(trans[i] == 0)
-						/*one more matching translator*/
-						++similar;
-					}
-			
-				/*While all not matching translators have not been removed*/
-				size_t j;
-				for(j = 0; j < lnode->ntrans - similar; ++j)
-					{
-					/*remove one more translator*/
-					err = node_kill_translator(dir, *node);
-					if(err)
-						{
-						finalize();
-						return err;
-						}
-					}
-					
-				/*obtain the pointer to the first not matching position*/
-				str = trans + i;
-				
-				/*seek to the beginning of the current translator name*/
-				for(; (str > trans) && *str; --str);
-				
-				/*While the required new translators have not been set*/
-				for(i = 0; i < ntrans - similar; ++i)
-					{
-					/*set the current translator on the file*/
-					err = node_set_translator(dir, *node, str);
-					if(err)
-						{
-						finalize();
-						return err;
-						}
-						
-					/*skip the current translator*/
-					str += strlen(str) + 1;
-					}
-				}
-			/*We have looked up a directory*/
-			else
-				{
-				/*If the length of the lists of translators are the same*/
-				if((lnode->translen = translen) && (lnode->ntrans == ntrans))
-					{
-					/*check each character of the list of translators*/
-					int i;
-					for(i = 0; (i < translen) && (lnode->trans[i] == trans[i]); ++i);
-					
-					/*If the lists coincide*/
-					if(i == translen)
-						{
-						/*the lookup has finished successfully here*/
-						err = 0;
-						finalize();
-						return err;
-						}
-					}
-				
-				/*unlock the directory in which we are at the moment*/
-				mutex_unlock(&dir->lock);
-				
-				/*kill all translators on all children of this node*/
-				node_kill_all_translators(*node);
-				
-				/*lock the directory back*/
-				mutex_lock(&dir->lock);
-				}
-				
-			/*destroy the list of translators in the current node*/
-			free(lnode->trans);
-			
-			/*put the new list in the node*/
-			lnode->trans		= trans;
-			lnode->ntrans 	= ntrans;
-			lnode->translen	= translen;
-			
-			/*all required translators have been already applied on this node*/
-			/*lnode->flags |= FLAG_LNODE_TRANSLATED;*/
-			
-			/*we don't own the list of translators any more*/
-			trans = NULL;
-
-			/*the lookup is already finished here*/
-			err = 0;
-			finalize();
-			return err;
-			}
+		/*we don't own the list of translators any more*/
+		trans = NULL;
+		ntrans = 0;
+		translen = 0;
 		}
 	/*The control sequence ',,' has not been found*/
 	else
 		{
-		/*simply lookup the provided name*/
-		err = lookup(name);
+		/*simply lookup the provided name, without creating the proxy, if not
+			necessary (i.e. when the 	file is not a directory)*/
+		err = lookup(name, flags, 0);
 		if(err)
 			{
 			finalize();
 			return err;
 			}
-
-		/*If there are some translators set on this file*/
-		if(lnode->trans)
-			{
-			/*unlock the directory*/
-			mutex_unlock(&dir->lock);
 			
-			/*kill all translators on this node*/
-			node_kill_all_translators(*node);
-			
-			/*lock the directory again*/
-			mutex_lock(&dir->lock);
-
-			/*all translators have been succesfully set here*/
-			/*lnode->flags |= FLAG_LNODE_TRANSLATED;*/
-			
-			/*the lookup has finished successfully here*/
-			/*The translators inherited from parents survive throughout
-				the previous loop*/
-			err = 0;
-			finalize();
-			return err;
-			}
+		/*if we have looked up a regular file, store the port to it in *`file`*/
+		if(!isdir)
+			*file = p;
 		}
 	
-	/*If we have a directory*/
-	if(isdir)
-		{
-		/*FIXME: It means we've got a directory, and no translators are set on
-			directories. The point is that nsmux should mainly handle libtrivs-based
-			translators, which should not operate on directories.*/
-		err = 0;
-		finalize();
-		return err;
-		}
-
-	/*If the current node has already been successfully translated*/
-	if(lnode->flags & FLAG_LNODE_TRANSLATED)
-		{
-		/*no additional translators must set on this file*/
-		err = 0;
-		finalize();
-		return err;
-		}
-
-	/*Obtain the list of inherited translators*/
-	err = lnode_list_translators(lnode, &trans, &ntrans);
-	if(err)
-		{
-		finalize();
-		return err;
-		}
-
-	/*If no translators have to be set*/
-	if(ntrans == 0)
-		{
-		/*we have looked up what we need*/
-		finalize();
-		return 0;
-		}
-
-	/*Go through the list of translators*/
-	for(str = trans, i = 0; i < ntrans; ++i)
-		{
-		/*set the translator specified in the current component*/
-		err = node_set_translator(dir, *node, str);
-		if(err)
-			{
-			finalize();
-			return 0; /*TODO: A better way to fight errors here*/
-			}
-	
-		/*skip the current component*/
-		str += strlen(str) + 1;
-		}
-
-	/*All translators have been succesfully set on this node*/
-	lnode->flags |= FLAG_LNODE_TRANSLATED;
-
 	/*Everything OK here*/
 	finalize();
 	return err;
-	}/*netfs_attempt_lookup*/
+	}/*netfs_attempt_lookup_improved*/
+/*----------------------------------------------------------------------------*/
+/*Responds to the RPC dir_lookup*/
+error_t
+netfs_S_dir_lookup
+	(
+	struct protid * diruser,
+	char * filename,
+	int flags,
+	mode_t mode,
+	retry_type * do_retry,
+	char * retry_name,
+	mach_port_t * retry_port,
+	mach_msg_type_number_t * retry_port_type
+	)
+	{
+	LOG_MSG("netfs_S_dir_lookup: '%s'", filename);
+
+  int create;			/* true if O_CREAT flag set */
+  int excl;			/* true if O_EXCL flag set */
+  int mustbedir = 0;		/* true if the result must be S_IFDIR */
+  int lastcomp = 0;		/* true if we are at the last component */
+  int newnode = 0;		/* true if this node is newly created */
+  int nsymlinks = 0;
+  struct node *dnp, *np;
+  char *nextname;
+  error_t error;
+  struct protid *newpi;
+  struct iouser *user;
+
+	/*The port to the file for the case when we don't need proxy nodes*/
+	file_t file = MACH_PORT_NULL;
+	
+	/*The port to the same file with restricted rights*/
+	file_t file_restricted = MACH_PORT_NULL;
+
+	/*The stat information about the node pointed at by `file` (for the case
+		when not proxy nodes are to be created)*/
+	io_statbuf_t stat;
+
+  if (!diruser)
+    return EOPNOTSUPP;
+
+  create = (flags & O_CREAT);
+  excl = (flags & O_EXCL);
+
+  /* Skip leading slashes */
+  while (*filename == '/')
+    filename++;
+
+  *retry_port_type = MACH_MSG_TYPE_MAKE_SEND;
+  *do_retry = FS_RETRY_NORMAL;
+  *retry_name = '\0';
+
+  if (*filename == '\0')
+    {
+      /* Set things up in the state expected by the code from gotit: on. */
+      dnp = 0;
+      np = diruser->po->np;
+      mutex_lock (&np->lock);
+      netfs_nref (np);
+      goto gotit;
+    }
+
+  dnp = diruser->po->np;
+  mutex_lock (&dnp->lock);
+
+  netfs_nref (dnp);		/* acquire a reference for later netfs_nput */
+
+  do
+    {
+      assert (!lastcomp);
+
+      /* Find the name of the next pathname component */
+      nextname = index (filename, '/');
+
+      if (nextname)
+	{
+	  *nextname++ = '\0';
+	  while (*nextname == '/')
+	    nextname++;
+	  if (*nextname == '\0')
+	    {
+	      /* These are the rules for filenames ending in /. */
+	      nextname = 0;
+	      lastcomp = 1;
+	      mustbedir = 1;
+	      create = 0;
+	    }
+	  else
+	    lastcomp = 0;
+	}
+      else
+	lastcomp = 1;
+
+      np = 0;
+
+    retry_lookup:
+
+      if ((dnp == netfs_root_node || dnp == diruser->po->shadow_root)
+	  && filename[0] == '.' && filename[1] == '.' && filename[2] == '\0')
+	if (dnp == diruser->po->shadow_root)
+	  /* We're at the root of a shadow tree.  */
+	  {
+	    *do_retry = FS_RETRY_REAUTH;
+	    *retry_port = diruser->po->shadow_root_parent;
+	    *retry_port_type = MACH_MSG_TYPE_COPY_SEND;
+	    if (! lastcomp)
+	      strcpy (retry_name, nextname);
+	    error = 0;
+	    mutex_unlock (&dnp->lock);
+	    goto out;
+	  }
+	else if (diruser->po->root_parent != MACH_PORT_NULL)
+	  /* We're at a real translator root; even if DIRUSER->po has a
+	     shadow root, we can get here if its in a directory that was
+	     renamed out from under it...  */
+	  {
+	    *do_retry = FS_RETRY_REAUTH;
+	    *retry_port = diruser->po->root_parent;
+	    *retry_port_type = MACH_MSG_TYPE_COPY_SEND;
+	    if (!lastcomp)
+	      strcpy (retry_name, nextname);
+	    error = 0;
+	    mutex_unlock (&dnp->lock);
+	    goto out;
+	  }
+	else
+	  /* We are global root */
+	  {
+	    error = 0;
+	    np = dnp;
+	    netfs_nref (np);
+	  }
+      else
+		{
+	/* Attempt a lookup on the next pathname component. */
+	/*error = netfs_attempt_lookup (diruser->user, dnp, filename, &np);*/
+	
+	/*attempt an improved lookup on the next pathname component*/
+	error = netfs_attempt_lookup_improved
+		(diruser->user, dnp, 	filename, flags, lastcomp, &np, &file);
+
+	/*If no problems have occurred during the lookup and we do not have O_EXCL*/
+	if(!error && !excl)
+		{
+		/*If a simple file has been looked up*/
+		if(file)
+			/*just return the port*/
+			goto justport;
+
+		/*If a proxy for setting up translators has just been created*/
+		if(np->nn->trans)
+			{
+			/*set the list of translators on this node*/
+			node_set_translators
+				(diruser, np, np->nn->trans, np->nn->ntrans, flags, &file);
+				
+			/*lock the the node and add a new reference*/
+			mutex_lock(&np->lock);
+			netfs_nref(np);
+			
+			/*return `file` as the resulting port*/
+			goto justport;
+			}
+		}
+		}
+
+      /* At this point, DNP is unlocked */
+
+      /* Implement O_EXCL flag here */
+      if (lastcomp && create && excl && !error)
+	error = EEXIST;
+
+      /* Create the new node if necessary */
+      if (lastcomp && create && error == ENOENT)
+	{
+	  mode &= ~(S_IFMT | S_ISPARE | S_ISVTX);
+	  mode |= S_IFREG;
+	  mutex_lock (&dnp->lock);
+	  error = netfs_attempt_create_file (diruser->user, dnp,
+					     filename, mode, &np);
+
+	  /* If someone has already created the file (between our lookup
+	     and this create) then we just got EEXIST.  If we are
+	     EXCL, that's fine; otherwise, we have to retry the lookup. */
+	  if (error == EEXIST && !excl)
+	    {
+	      mutex_lock (&dnp->lock);
+	      goto retry_lookup;
+	    }
+
+	  newnode = 1;
+	}
+
+      /* All remaining errors get returned to the user */
+      if (error)
+	goto out;
+
+      error = netfs_validate_stat (np, diruser->user);
+      if (error)
+	goto out;
+
+      if ((((flags & O_NOTRANS) == 0) || !lastcomp)
+	  && ((np->nn_translated & S_IPTRANS)
+	      || S_ISFIFO (np->nn_translated)
+	      || S_ISCHR (np->nn_translated)
+	      || S_ISBLK (np->nn_translated)
+	      || fshelp_translated (&np->transbox)))
+	{
+	  mach_port_t dirport;
+
+	  /* A callback function for short-circuited translators.
+	     S_ISLNK and S_IFSOCK are handled elsewhere. */
+	  error_t short_circuited_callback1 (void *cookie1, void *cookie2,
+					     uid_t *uid, gid_t *gid,
+					     char **argz, size_t *argz_len)
+	    {
+	      struct node *np = cookie1;
+	      error_t err;
+
+	      err = netfs_validate_stat (np, diruser->user);
+	      if (err)
+		return err;
+
+	      switch (np->nn_translated & S_IFMT)
+		{
+		case S_IFCHR:
+		case S_IFBLK:
+		  if (asprintf (argz, "%s%c%d%c%d",
+				(S_ISCHR (np->nn_translated)
+				 ? _HURD_CHRDEV : _HURD_BLKDEV),
+				0, major (np->nn_stat.st_rdev),
+				0, minor (np->nn_stat.st_rdev)) < 0)
+		    return ENOMEM;
+		  *argz_len = strlen (*argz) + 1;
+		  *argz_len += strlen (*argz + *argz_len) + 1;
+		  *argz_len += strlen (*argz + *argz_len) + 1;
+		  break;
+		case S_IFIFO:
+		  if (asprintf (argz, "%s", _HURD_FIFO) < 0)
+		    return ENOMEM;
+		  *argz_len = strlen (*argz) + 1;
+		  break;
+		default:
+		  return ENOENT;
+		}
+
+	      *uid = np->nn_stat.st_uid;
+	      *gid = np->nn_stat.st_gid;
+
+	      return 0;
+	    }
+
+	  /* Create an unauthenticated port for DNP, and then
+	     unlock it. */
+	  error = iohelp_create_empty_iouser (&user);
+	  if (! error)
+	    {
+	      newpi = netfs_make_protid (netfs_make_peropen (dnp, 0,
+							     diruser->po),
+					 user);
+	      if (! newpi)
+	        {
+		  error = errno;
+		  iohelp_free_iouser (user);
+		}
+	    }
+
+	  if (! error)
+	    {
+	      dirport = ports_get_send_right (newpi);
+	      ports_port_deref (newpi);
+
+	      error = fshelp_fetch_root (&np->transbox, diruser->po,
+					 dirport,
+					 diruser->user,
+					 lastcomp ? flags : 0,
+					 ((np->nn_translated & S_IPTRANS)
+					 ? _netfs_translator_callback1
+					   : short_circuited_callback1),
+					 _netfs_translator_callback2,
+					 do_retry, retry_name, retry_port);
+	      /* fetch_root copies DIRPORT for success, so we always should
+		 deallocate our send right.  */
+	      mach_port_deallocate (mach_task_self (), dirport);
+	    }
+
+	  if (error != ENOENT)
+	    {
+	      netfs_nrele (dnp);
+	      netfs_nput (np);
+	      *retry_port_type = MACH_MSG_TYPE_MOVE_SEND;
+	      if (!lastcomp && !error)
+		{
+		  strcat (retry_name, "/");
+		  strcat (retry_name, nextname);
+		}
+	      return error;
+	    }
+
+	  /* ENOENT means there was a hiccup, and the translator vanished
+	     while NP was unlocked inside fshelp_fetch_root; continue as normal. */
+	  error = 0;
+	}
+
+      if (S_ISLNK (np->nn_translated)
+	  && (!lastcomp
+	      || mustbedir	/* "foo/" must see that foo points to a dir */
+	      || !(flags & (O_NOLINK|O_NOTRANS))))
+	{
+	  size_t nextnamelen, newnamelen, linklen;
+	  char *linkbuf;
+
+	  /* Handle symlink interpretation */
+	  if (nsymlinks++ > netfs_maxsymlinks)
+	    {
+	      error = ELOOP;
+	      goto out;
+	    }
+
+	  linklen = np->nn_stat.st_size;
+
+	  nextnamelen = nextname ? strlen (nextname) + 1 : 0;
+	  newnamelen = nextnamelen + linklen + 1;
+	  linkbuf = alloca (newnamelen);
+
+	  error = netfs_attempt_readlink (diruser->user, np, linkbuf);
+	  if (error)
+	    goto out;
+
+	  if (nextname)
+	    {
+	      linkbuf[linklen] = '/';
+	      memcpy (linkbuf + linklen + 1, nextname,
+		     nextnamelen - 1);
+	    }
+	  linkbuf[nextnamelen + linklen] = '\0';
+
+	  if (linkbuf[0] == '/')
+	    {
+	      /* Punt to the caller */
+	      *do_retry = FS_RETRY_MAGICAL;
+	      *retry_port = MACH_PORT_NULL;
+	      strcpy (retry_name, linkbuf);
+	      goto out;
+	    }
+
+	  filename = linkbuf;
+	  if (lastcomp)
+	    {
+	      lastcomp = 0;
+
+	      /* Symlinks to nonexistent files aren't allowed to cause
+		 creation, so clear the flag here. */
+	      create = 0;
+	    }
+	  netfs_nput (np);
+	  mutex_lock (&dnp->lock);
+	  np = 0;
+	}
+      else
+	{
+	  /* Normal nodes here for next filename component */
+	  filename = nextname;
+	  netfs_nrele (dnp);
+
+	  if (lastcomp)
+	    dnp = 0;
+	  else
+	    {
+	      dnp = np;
+	      np = 0;
+	    }
+	}
+    }
+  while (filename && *filename);
+
+  /* At this point, NP is the node to return.  */
+ gotit:
+
+  if (mustbedir)
+    {
+      netfs_validate_stat (np, diruser->user);
+      if (!S_ISDIR (np->nn_stat.st_mode))
+	{
+	  error = ENOTDIR;
+	  goto out;
+	}
+    }
+  error = netfs_check_open_permissions (diruser->user, np,
+					flags, newnode);
+  if (error)
+    goto out;
+
+  flags &= ~OPENONLY_STATE_MODES;
+
+  error = iohelp_dup_iouser (&user, diruser->user);
+  if (error)
+    goto out;
+
+  newpi = netfs_make_protid (netfs_make_peropen (np, flags, diruser->po),
+			     user);
+  if (! newpi)
+    {
+      iohelp_free_iouser (user);
+      error = errno;
+      goto out;
+    }
+
+  *retry_port = ports_get_right (newpi);
+  ports_port_deref (newpi);
+
+	goto out;
+
+	/*At this point, we have to return `file` as the resulting port*/
+ justport:
+ 	/*If a directory is definitely wanted*/
+ 	if(mustbedir)
+ 		{
+ 		/*stat the looked up file*/
+ 		error = io_stat(file, &stat);
+		if(error)
+			goto out;
+			
+		/*If the file is not a directory*/
+		if(!S_ISDIR(stat.st_mode))
+			{
+			/*this is an error; stop here*/
+			error = ENOTDIR;
+			goto out;
+			}
+			
+ 		}
+ 		
+	/*Check the user's open permissions for the specified port*/
+	error = check_open_permissions(diruser->user, &stat, file);
+	if(error)
+		goto out;
+		
+	/*Restrict the port to the rights of the user*/
+	error = io_restrict_auth
+		(
+		file, &file_restricted,
+		diruser->user->uids->ids, diruser->user->uids->num,
+		diruser->user->gids->ids, diruser->user->gids->num
+		);
+	if(error)
+		goto out;
+
+	/*Put the resulting port in the corresponding receiver parameter*/
+	*retry_port = file_restricted;
+	*retry_port_type = MACH_MSG_TYPE_MOVE_SEND;
+
+ out:
+	if(error && (file != MACH_PORT_NULL))
+		PORT_DEALLOC(file);
+  if (np)
+    netfs_nput (np);
+  if (dnp)
+    netfs_nrele (dnp);
+  return error;
+	}/*netfs_S_dir_lookup*/
 /*----------------------------------------------------------------------------*/
 /*Deletes `name` in `dir` for `user`*/
 error_t
@@ -1353,32 +1661,6 @@ netfs_attempt_read
 
 	error_t err = 0;
 
-	/*If there is no port open for the current node*/
-	if(np->nn->port == MACH_PORT_NULL)
-		{
-		/*the parent node of the current node*/
-		node_t * dnp;
-
-		/*obtain the parent node of the the current node*/
-		err = ncache_node_lookup(np->nn->lnode->dir, &dnp);
-		
-		/*the lookup should never fail here*/
-		assert(!err);
-		
-		/*open a port to the file we are interested in*/
-		mach_port_t p = file_name_lookup_under
-			(dnp->nn->port, np->nn->lnode->name, O_READ, 0);
-
-		/*put `dnp` back, since we don't need it any more*/
-		netfs_nput(dnp);
-
-		if(!p)
-			return EBADF;
-			
-		/*store the port in the node*/
-		np->nn->port = p;
-		}
-	
 	/*Obtain a pointer to the first byte of the supplied buffer*/
 	char * buf = data;
 	
@@ -1411,8 +1693,6 @@ netfs_attempt_write
 	void * data
 	)
 	{
-	LOG_MSG("netfs_attempt_write");
-
 	return 0;
 	}/*netfs_attempt_write*/
 /*----------------------------------------------------------------------------*/
@@ -1426,6 +1706,8 @@ netfs_node_norefs
 	/*Destroy the node*/
 	node_destroy(np);
 	}/*netfs_node_norefs*/
+/*----------------------------------------------------------------------------*/
+
 /*----------------------------------------------------------------------------*/
 /*Entry point*/
 int

@@ -5,7 +5,7 @@
 /*----------------------------------------------------------------------------*/
 /*Based on the code of unionfs translator.*/
 /*----------------------------------------------------------------------------*/
-/*Copyright (C) 2001, 2002, 2005 Free Software Foundation, Inc.
+/*Copyright (C) 2001, 2002, 2005, 2008 Free Software Foundation, Inc.
   Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
 
   This program is free software; you can redistribute it and/or
@@ -40,6 +40,7 @@
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
+/*--------Types---------------------------------------------------------------*/
 /*A cache chain*/
 struct ncache
 	{

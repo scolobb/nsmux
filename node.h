@@ -5,7 +5,7 @@
 /*----------------------------------------------------------------------------*/
 /*Based on the code of unionfs translator.*/
 /*----------------------------------------------------------------------------*/
-/*Copyright (C) 2001, 2002, 2005 Free Software Foundation, Inc.
+/*Copyright (C) 2001, 2002, 2005, 2008 Free Software Foundation, Inc.
   Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
 
   This program is free software; you can redistribute it and/or
@@ -51,11 +51,20 @@
 #	define OFFSET_T __off_t
 #endif /*__USE_FILE_OFFSET64*/
 /*----------------------------------------------------------------------------*/
-/*The size of a chunk of a string (for a small optimization in checking
-	the property)*/
-#define STRING_CHUNK 256
-/*----------------------------------------------------------------------------*/
 
+/*----------------------------------------------------------------------------*/
+/*--------Types---------------------------------------------------------------*/
+/*A list element containing a port*/
+struct port_el
+	{
+	/*the port*/
+	mach_port_t p;
+	
+	/*the next element in the list*/
+	struct port_el * next;
+	};/*struct port_el*/
+/*----------------------------------------------------------------------------*/
+typedef struct port_el port_el_t;
 /*----------------------------------------------------------------------------*/
 /*The user-defined node for libnetfs*/
 struct netnode
@@ -63,12 +72,26 @@ struct netnode
 	/*the reference to the corresponding light node*/
 	lnode_t * lnode;
 	
-	/*the flags associated with this node (might be not required)*/
+	/*the flags associated with this node*/
 	int flags;
 
 	/*a port to the underlying filesystem*/
 	file_t port;
 	
+	/*the malloced set of translators which have to be stacked upon this node
+	  and upon its children; the corresponding translators will have to decide
+	  on their own whether to accept directories or not*/
+	char * trans;
+	
+	/*the number of translators listed in `translators`*/
+	size_t ntrans;
+	
+	/*the length of the list of translators (in bytes)*/
+	size_t translen;
+	
+	/*the list of control ports to the translators being set on this node*/
+	port_el_t * cntl_ports;
+
 	/*the neighbouring entries in the cache*/
 	node_t * ncache_prev, * ncache_next;
 	};/*struct netnode*/
@@ -99,6 +122,14 @@ extern struct mutex ulfs_lock;
 /*Derives a new node from `lnode` and adds a reference to `lnode`*/
 error_t
 node_create
+	(
+	lnode_t * lnode,
+	node_t ** node	/*store the result here*/
+	);
+/*----------------------------------------------------------------------------*/
+/*Derives a new proxy from `lnode`*/
+error_t
+node_create_proxy
 	(
 	lnode_t * lnode,
 	node_t ** node	/*store the result here*/
@@ -165,15 +196,17 @@ node_unlink_file
 	char * name
 	);
 /*----------------------------------------------------------------------------*/
-/*Sets the given translator on the supplied node*/
-/*This function will normally be called from netfs_attempt_lookup, therefore
-	it's better that the caller should provide the parent node for `node`.*/
+/*Sets the given translators on the specified node and returns the port to
+	the topmost one opened as `flags` require*/
 error_t
-node_set_translator
+node_set_translators
 	(
-	node_t * dir,
-	node_t * node,
-	const char * trans	/*set this on `name`*/
+	struct protid * diruser,
+	node_t * np,
+	char * trans,	/*set these on `node`*/
+	size_t ntrans,
+	int flags,
+	mach_port_t * port
 	);
 /*----------------------------------------------------------------------------*/
 /*Kill the topmost translator for this node*/
@@ -189,9 +222,19 @@ node_kill_translator
 /*Kills all translators on the current node or on all underlying nodes it the
 	current node is a directory*/
 void
-node_kill_all_translators
+node_kill_translators
 	(
 	node_t * node
+	);
+/*----------------------------------------------------------------------------*/
+/*Constructs a list of translators that were set on the ancestors of `node`*/
+/*TODO: Remove node_list_translators.*/
+error_t
+node_list_translators
+	(
+	node_t * node,
+	char ** trans,	/*the malloced list of 0-separated strings*/
+	size_t * ntrans	/*the number of elements in `trans`*/
 	);
 /*----------------------------------------------------------------------------*/
 #endif /*__NODE_H__*/

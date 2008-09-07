@@ -5,7 +5,7 @@
 /*----------------------------------------------------------------------------*/
 /*Based on the code of unionfs translator.*/
 /*----------------------------------------------------------------------------*/
-/*Copyright (C) 2001, 2002, 2005 Free Software Foundation, Inc.
+/*Copyright (C) 2001, 2002, 2005, 2008 Free Software Foundation, Inc.
   Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
 
   This program is free software; you can redistribute it and/or
@@ -32,6 +32,7 @@
 #include <hurd.h>
 #include <dirent.h>
 #include <stddef.h>
+#include <hurd/iohelp.h>
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
@@ -77,6 +78,16 @@ file_lookup
 	int mode,						/*if the file is to be created, create it with this mode*/
 	file_t * port,			/*store the port to the looked up file here*/
 	io_statbuf_t * stat	/*store the stat information here*/
+	);
+/*----------------------------------------------------------------------------*/
+/*Checks whether `user` has the right to open the node described by `stat` with
+	`flags`*/
+error_t
+check_open_permissions
+	(
+	struct iouser * user,
+	io_statbuf_t * stat,
+	int flags
 	);
 /*----------------------------------------------------------------------------*/
 #endif /*__LIB_H__*/

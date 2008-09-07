@@ -5,7 +5,7 @@
 /*----------------------------------------------------------------------------*/
 /*Based on the code of unionfs translator.*/
 /*----------------------------------------------------------------------------*/
-/*Copyright (C) 2001, 2002, 2005 Free Software Foundation, Inc.
+/*Copyright (C) 2001, 2002, 2005, 2008 Free Software Foundation, Inc.
   Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
 
   This program is free software; you can redistribute it and/or
@@ -35,13 +35,24 @@
 /*--------Macros--------------------------------------------------------------*/
 /*The possible flags in an lnode*/
 #define FLAG_LNODE_DIR				0x00000001	/*the lnode is a directory*/
-#define FLAG_LNODE_TRANSLATED 0x00000002	/*all appropriate translators
-																						have already been set on this node*/
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
+/*--------Types---------------------------------------------------------------*/
 /*A candy synonym for the fundamental libnetfs node*/
 typedef struct node node_t;
+/*----------------------------------------------------------------------------*/
+/*A list of lnodes*/
+struct node_element
+	{
+	/*the node associated with the current entry*/
+	node_t * node;
+	
+	/*the next element in the list*/
+	struct node_element * next;
+	};/*struct node_element*/
+/*----------------------------------------------------------------------------*/
+typedef struct node_element * node_list_t;
 /*----------------------------------------------------------------------------*/
 /*The light node*/
 struct lnode
@@ -56,25 +67,18 @@ struct lnode
 	/*the full path to the lnode*/
 	char * path;
 	
-	/*the malloced set of translators which have to be stacked upon this node
-	  and upon its children; the corresponding translators will have to decide
-	  on their own whether to accept directories or not*/
-	char * trans;
-	
-	/*the number of translators listed in `translators`*/
-	size_t ntrans;
-	
-	/*the length of the list of translators (in bytes)*/
-	size_t translen;
-
 	/*the associated flags*/
 	int flags;
 	
 	/*the number of references to this lnode*/
 	int references;
 	
-	/*the reference to the real node*/
+	/*the reference to the real netfs node*/
 	node_t * node;
+	
+	/*the references to the proxy nodes of this lnode;
+		lnodes do not hold references to */
+	node_list_t proxies;
 	
 	/*the next lnode and the pointer to this lnode from the previous one*/
 	struct lnode * next, **prevp;
@@ -85,7 +89,7 @@ struct lnode
 	/*the beginning of the list of entries contained in this lnode (directory)*/
 	struct lnode * entries;
 	
-	/*a lock*/
+	/*the lock, protecting this lnode*/
 	struct mutex lock;
 	};/*struct lnode*/
 /*----------------------------------------------------------------------------*/
@@ -159,13 +163,23 @@ lnode_uninstall
 	lnode_t * node
 	);
 /*----------------------------------------------------------------------------*/
-/*Constructs a list of translators that were set on the ancestors of `node`*/
+/*Makes the specified lnode aware of another proxy. Both `node` and `proxy`
+	must be locked*/
 error_t
-lnode_list_translators
+lnode_add_proxy
 	(
 	lnode_t * node,
-	char ** trans,	/*the malloced list of 0-separated strings*/
-	size_t * ntrans	/*the number of elements in `trans`*/
+	node_t * proxy
+	);
+/*----------------------------------------------------------------------------*/
+/*Removes the specified proxy from the list of proxies of the supplied lnode.
+	`proxy` must not be locked*/
+void
+lnode_remove_proxy
+	(
+	lnode_t * node,
+	node_t * proxy
 	);
 /*----------------------------------------------------------------------------*/
 #endif /*__LNODE_H__*/
+

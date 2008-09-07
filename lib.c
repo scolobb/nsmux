@@ -5,7 +5,7 @@
 /*----------------------------------------------------------------------------*/
 /*Based on the code of unionfs translator.*/
 /*----------------------------------------------------------------------------*/
-/*Copyright (C) 2001, 2002, 2005 Free Software Foundation, Inc.
+/*Copyright (C) 2001, 2002, 2005, 2008 Free Software Foundation, Inc.
   Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
 
   This program is free software; you can redistribute it and/or
@@ -28,6 +28,8 @@
 #define _GNU_SOURCE 1
 /*----------------------------------------------------------------------------*/
 #include <sys/mman.h>
+#include <fcntl.h>
+#include <hurd/fshelp.h>
 /*----------------------------------------------------------------------------*/
 #include "lib.h"
 #include "debug.h"
@@ -190,4 +192,28 @@ file_lookup
 	/*Return the result of performing operations*/
 	return err;
 	}/*file_lookup*/
+/*----------------------------------------------------------------------------*/
+/*Checks whether `user` has the right to open the node described by `stat` with
+	`flags`*/
+error_t
+check_open_permissions
+	(
+	struct iouser * user,
+	io_statbuf_t * stat,
+	int flags
+	)
+	{
+	error_t err = 0;
+	
+	/*Cheks user's permissions*/
+	if(flags & O_READ)
+		err = fshelp_access(stat, S_IREAD, user);
+	if(!err && (flags & O_WRITE))
+		err = fshelp_access(stat, S_IWRITE, user);
+	if(!err && (flags & O_EXEC))
+		err = fshelp_access(stat, S_IEXEC, user);
+		
+	/*Return the result of the check*/
+	return err;
+	}/*check_open_permissions*/
 /*----------------------------------------------------------------------------*/
