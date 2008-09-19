@@ -34,11 +34,6 @@
 #include <stdio.h>
 #include <argz.h>
 #include <hurd/fsys.h>
-
-
-/*!!!!!!!REMOVE THIS!!!!!!*/
-#include <sys/file.h>
-
 /*----------------------------------------------------------------------------*/
 #include "debug.h"
 #include "node.h"
@@ -1050,76 +1045,4 @@ node_kill_translators
 		free(p_el);
 		}
 	}/*node_kill_translators*/
-/*----------------------------------------------------------------------------*/
-/*Constructs a list of translators that were set on the ancestors of `node`*/
-/*TODO: Remove node_list_translators.*/
-error_t
-node_list_translators
-	(
-	node_t * node,
-	char ** trans,	/*the malloced list of 0-separated strings*/
-	size_t * ntrans	/*the number of elements in `trans`*/
-	)
-	{
-	/*The size of block of memory for the list of translators*/
-	size_t sz = 0;
-	
-	/*Used for tracing the lineage of `node`*/
-	lnode_t * ln = node->nn->lnode;
-	
-	/*Used in computing the lengths of lists of translators in every node
-		we will go through and for constructing the final list of translators*/
-	char * p;
-	
-	/*The current position in *data (used in filling out the list of
-		translators)*/
-	char * transp;
-	
-	/*The length of the current translator name*/
-	size_t complen;
-	
-	size_t i;
-	
-	/*Trace the lineage of the `node` (including itself) and compute the
-		total length of the list of translators*/
-	for(; ln; sz += node->nn->translen, ln = ln->dir);
-	
-	/*Try to allocate a block of memory sufficient for storing the list of
-		translators*/
-	*trans = malloc(sz);
-	if(!*trans)
-		return ENOMEM;
-	
-	/*No translators at first*/
-	*ntrans = 0;
-	
-	/*Again trace the lineage of the `node` (including itself)*/
-	for(transp = *trans + sz, ln = node->nn->lnode; ln; ln = ln->dir)
-		{
-		/*Go through each translator name in the list of names*/
-		for
-			(
-			i = 0, p = node->nn->trans + node->nn->translen - 2;
-			i < node->nn->ntrans; ++i
-			)
-			{
-			/*position p at the beginning of the current component and
-				compute its length at the same time*/
-			for(complen = 0; *p; --p, ++complen);
-			--p;
-			
-			/*move the current position backwards*/
-			transp -= complen + 1;
-
-			/*copy the current translator name into the list*/
-			strcpy(transp, p + 2);
-			
-			/*we've got another translator*/
-			++*ntrans;
-			}
-		}
-		
-	/*Everything OK*/
-	return 0;
-	}/*lnode_list_translators*/
 /*----------------------------------------------------------------------------*/

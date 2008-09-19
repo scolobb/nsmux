@@ -227,14 +227,4 @@ node_kill_translators
 	node_t * node
 	);
 /*----------------------------------------------------------------------------*/
-/*Constructs a list of translators that were set on the ancestors of `node`*/
-/*TODO: Remove node_list_translators.*/
-error_t
-node_list_translators
-	(
-	node_t * node,
-	char ** trans,	/*the malloced list of 0-separated strings*/
-	size_t * ntrans	/*the number of elements in `trans`*/
-	);
-/*----------------------------------------------------------------------------*/
 #endif /*__NODE_H__*/

@@ -36,7 +36,11 @@
 ncache_t ncache;
 /*----------------------------------------------------------------------------*/
 /*Cache size (may be overwritten by the user)*/
-int ncache_size = NCACHE_SIZE;
+/*int ncache_size = NCACHE_SIZE;*/
+/*Our cache is not really a cache now (actually, it has never been one). Its
+	main task now will be to maintain additional references to shadow nodes,
+	which are still in use by some clients and which could possibly go away if
+	nobody maintained references to them explicitly.*/
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
@@ -45,14 +49,15 @@ int ncache_size = NCACHE_SIZE;
 void
 ncache_init
 	(
-	int size_max
+	/*int size_max*/
+	void
 	)
 	{
 	/*Reset the LRU and MRU ends of the list*/
 	ncache.mru = ncache.lru = NULL;
 	
 	/*Set the maximal size according to the parameter*/
-	ncache.size_max = size_max;
+	/*ncache.size_max = size_max;*/
 	
 	/*The cache is empty so far; remark that*/
 	ncache.size_current = 0;
@@ -101,8 +106,9 @@ ncache_node_lookup
 	return err;
 	}/*ncache_node_lookup*/
 /*----------------------------------------------------------------------------*/
-/*Removes the given node from the cache*/
-static
+/*Removes the given node from the cache. Does not release the reference held
+	by the cache (for some further finalization actions on the node)*/
+/*Nodes will NOT be removed from the cache automatically*/
 void
 ncache_node_remove
 	(
@@ -139,16 +145,17 @@ ncache_node_remove
 	}/*ncache_node_remove*/
 /*----------------------------------------------------------------------------*/
 /*Resets the node cache*/
+/*No references to nodes are released*/
 void
 ncache_reset(void)
 	{
-	/*The node being currently deleted*/
+	/*The node being currently removed from the cache*/
 	node_t * node;
 	
 	/*Acquire a lock on the cache*/
 	mutex_lock(&ncache.lock);
 	
-	/*Remove the whole cache chain*/
+	/*Release the whole cache chain*/
 	for(node = ncache.mru; node != NULL; ncache_node_remove(node), node = ncache.mru);
 
 	/*Release the lock*/
@@ -165,8 +172,8 @@ ncache_node_add
 	/*Acquire a lock on the cache*/
 	mutex_lock(&ncache.lock);
 	
-	/*If there already are some nodes in the cache and it is enabled*/
-	if((ncache.size_max > 0) || (ncache.size_current > 0))
+	/*If there already are some nodes in the cache already*/
+	if(ncache.size_current > 0)
 		{
 		/*If the node to be added is not at the MRU end already*/
 		if(ncache.mru != node)
@@ -200,20 +207,20 @@ ncache_node_add
 		}
 		
 	/*While the size of the cache is exceeding the maximal size*/
-	node_t * old_lru;
+/*	node_t * old_lru;
 	for
 		(
 		old_lru = ncache.lru;
 		ncache.size_current > ncache.size_max;
 		old_lru = ncache.lru
 		)
-		{
+		{*/
 		/*remove the current LRU end of the list from the cache*/
-		ncache_node_remove(old_lru);
+		/*ncache_node_remove(old_lru);*/
 		
 		/*release the reference to the node owned by this thread*/
-		netfs_nrele(old_lru);
-		}
+		/*netfs_nrele(old_lru);
+		}*/
 		
 	/*Release the lock on the cache*/
 	mutex_unlock(&ncache.lock);

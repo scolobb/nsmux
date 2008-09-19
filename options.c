@@ -80,8 +80,9 @@ static int parsing_startup_options_finished;
 /*Argp options common to both the runtime and the startup parser*/
 static const struct argp_option argp_common_options[] =
 	{
-	{OPT_LONG_CACHE_SIZE, OPT_CACHE_SIZE, "SIZE", 0,
-		"The maximal number of nodes in the node cache"}
+	/*{OPT_LONG_CACHE_SIZE, OPT_CACHE_SIZE, "SIZE", 0,
+		"The maximal number of nodes in the node cache"}*/
+	{0}
 	};
 /*----------------------------------------------------------------------------*/
 /*Argp options only meaningful for startup parsing*/
@@ -147,13 +148,13 @@ argp_parse_common_options
 	/*Go through the possible options*/
 	switch(key)
 		{
-		case OPT_CACHE_SIZE:
-			{
+		/*case OPT_CACHE_SIZE:
+			{*/
 			/*store the new cache-size*/
-			ncache_size = strtol(arg, NULL, 10);
+			/*ncache_size = strtol(arg, NULL, 10);
 			
 			break;
-			}
+			}*/
 		case ARGP_KEY_ARG: /*the directory to mirror*/
 			{
 			/*try to duplicate the directory name*/

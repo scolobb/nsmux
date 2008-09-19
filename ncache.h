@@ -36,7 +36,8 @@
 /*----------------------------------------------------------------------------*/
 /*--------Macros--------------------------------------------------------------*/
 /*The default maximal cache size*/
-#define NCACHE_SIZE 256
+/*#define NCACHE_SIZE 256*/
+/*SEE ALSO the comment in ncache.c*/
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
@@ -51,7 +52,8 @@ struct ncache
 	node_t * lru;
 	
 	/*the maximal number of nodes to cache*/
-	int size_max;
+	/*int size_max;*/
+	/*SEE ALSO the comment in ncache.c*/
 	
 	/*the current length of the cache chain*/
 	int size_current;
@@ -66,7 +68,8 @@ typedef struct ncache ncache_t;
 /*----------------------------------------------------------------------------*/
 /*--------Global Variables----------------------------------------------------*/
 /*The cache size (may be overwritten by the user)*/
-extern int cache_size;
+/*extern int cache_size;*/
+/*SEE ALSO the comment in ncache.c*/
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
@@ -75,7 +78,8 @@ extern int cache_size;
 void
 ncache_init
 	(
-	int size_max
+	/*int size_max*/
+	void
 	);
 /*----------------------------------------------------------------------------*/
 /*Looks up the lnode and stores the result in `node`; creates a new entry
@@ -87,7 +91,17 @@ ncache_node_lookup
 	node_t ** node		/*put the result here*/
 	);
 /*----------------------------------------------------------------------------*/
+/*Removes the given node from the cache. Does not release the reference held
+	by the cache (for some further finalization actions on the node)*/
+/*Nodes will NOT be removed from the cache automatically*/
+void
+ncache_node_remove
+	(
+	node_t * node
+	);
+/*----------------------------------------------------------------------------*/
 /*Resets the node cache*/
+/*No references to nodes are released*/
 void
 ncache_reset(void);
 /*----------------------------------------------------------------------------*/

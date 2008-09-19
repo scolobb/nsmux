@@ -1761,7 +1761,7 @@ main
 	LOG_MSG("Time mapped.");
 		
 	/*Initialize the cache with the required number of nodes*/
-	ncache_init(ncache_size);
+	ncache_init(/*ncache_size*/);
 	LOG_MSG("Cache initialized.");
 	
 	/*Obtain stat information about the underlying node*/
