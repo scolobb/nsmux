@@ -1837,52 +1837,7 @@ netfs_node_norefs
 	node_destroy(np);
 	}/*netfs_node_norefs*/
 /*----------------------------------------------------------------------------*/
-/*Implements file_get_translator_cntl as described in <hurd/fs.defs>
-	(according to diskfs_S_file_get_translator_cntl)*/
-kern_return_t
-netfs_S_file_get_translator_cntl
-	(
-	struct protid * user,
-	mach_port_t * cntl,
-	mach_msg_type_name_t * cntltype
-	)
-	{
-	/*If the information about the user is missing*/
-	if(!user)
-		return EOPNOTSUPP;
-		
-	error_t err = 0;
-	
-	/*Obtain the node for which we are called*/
-	node_t * np = user->po->np;
-	
-	/*Lock the node*/
-	mutex_lock(&np->lock);
-	
-	/*Check if the user is the owner of this node*/
-	err = fshelp_isowner(&np->nn_stat, user->user);
-	
-	/*If no errors have happened*/
-	if(!err)
-		/*try to fetch the control port*/
-		err = fshelp_fetch_control(&np->transbox, cntl);
-		
-	/*If no errors have occurred, but no port has been returned*/
-	if(!err && (cntl == MACH_PORT_NULL))
-		/*set the error accordingly*/
-		err = ENXIO;
-		
-	/*If no errors have occurred so far*/
-	if(!err)
-		/*set the control port type*/
-		*cntltype = MACH_MSG_TYPE_MOVE_SEND;
-		
-	/*Unlock the node*/
-	mutex_unlock(&np->lock);
-	
-	/*Return the result of operations*/
-	return err;
-	}/*netfs_S_file_get_translator_cntl*/
+
 /*----------------------------------------------------------------------------*/
 /*Entry point*/
 int
