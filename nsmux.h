@@ -186,25 +186,6 @@ netfs_S_dir_lookup
 	mach_msg_type_number_t * retry_port_type
 	);
 /*----------------------------------------------------------------------------*/
-/*Responds to RPC fsys_getroot*/
-error_t
-netfs_S_fsys_getroot
-	(
-	mach_port_t cntl,
-  mach_port_t reply,
-  mach_msg_type_name_t reply_type,
-  mach_port_t dotdot,
-  uid_t *uids,
-  mach_msg_type_number_t nuids,
-  uid_t *gids,
-  mach_msg_type_number_t ngids,
-  int flags,
-  retry_type *do_retry,
-  char *retry_name,
-  mach_port_t *retry_port,
-  mach_msg_type_name_t *retry_port_type
-  );
-/*----------------------------------------------------------------------------*/
 /*Deletes `name` in `dir` for `user`*/
 error_t
 netfs_attempt_unlink
