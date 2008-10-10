@@ -14,10 +14,6 @@ ask for 'file,,x'. You can also obtain the untranslated version of the
 node 'file' using the following syntax: 'file,,0'. Note how we avoid
 the usage of 'settrans', and, at the same time, maintain the
 advantages of translator-based approach.
-  It is important to mention that the idea described above can be
-applied similarly to directories: if there is a directory 'directory'
-and you ask for 'directory,,x/', you will provided with a directory in
-which every entry will be translated by translator 'x'.
   You can also filter the translator stack: suppose you have a file
 'file' translated by translators 'x', 'u', 'y', and 'z'. In most
 cases, you can request for 'file,,-u', and you will be provided with
