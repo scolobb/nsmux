@@ -1727,6 +1727,25 @@ netfs_S_file_get_translator_cntl
 	/*Obtain the node for which we are called*/
 	node_t * np = user->po->np;
 	
+	/*If the node is not the root node of nsmux*/
+	if(np != netfs_root_node)
+		{
+		/*the control port to the translator sitting on the real node*/
+		mach_port_t p;
+
+		/*obtain the control port for the translator sitting on the real node*/
+		err = file_get_translator_cntl(np->nn->port, &p);
+		if(err)
+			return err;
+			
+		/*set the parameters accordingly*/
+		*cntltype = MACH_MSG_TYPE_MOVE_SEND;
+		*cntl = p;
+		
+		/*return the result of operations*/
+		return err;
+		}
+	
 	/*Lock the node*/
 	mutex_lock(&np->lock);
 	
