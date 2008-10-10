@@ -1752,8 +1752,11 @@ netfs_S_file_get_translator_cntl
 		/*the control port to the translator sitting on the real node*/
 		mach_port_t p;
 
-		/*obtain the control port for the translator sitting on the real node*/
-		err = file_get_translator_cntl(np->nn->port, &p);
+		/*obtain the control port for the translator sitting on the real node;
+			provide the bottommost translator, so that the filter (and this is
+			most probably a request of such a translator) should be able to trace
+			the real translator stack*/
+		err = file_get_translator_cntl(np->nn->port_notrans, &p);
 		if(err)
 			return err;
 			
