@@ -602,6 +602,9 @@ netfs_attempt_lookup_improved
 
 	/*The port to the requested file*/
 	mach_port_t p;
+	
+	/*The port to the untranslated version of the requested file*/
+	mach_port_t p_notrans;
 
 	/*The lnode corresponding to the entry we are supposed to fetch*/
 	lnode_t * lnode;
@@ -641,6 +644,8 @@ netfs_attempt_lookup_improved
 			/*If there is some port, free it*/
 			if(p != MACH_PORT_NULL)
 				PORT_DEALLOC(p);
+			if(p_notrans != MACH_PORT_NULL)
+				PORT_DEALLOC(p_notrans);
 			}
 		/*If there is a node to return*/
 		if(*node)
@@ -689,6 +694,12 @@ netfs_attempt_lookup_improved
 			if(p == MACH_PORT_NULL)
 				return EBADF;
 			
+			/*obtain the untranslated version of the file, too (for filters)*/
+			p_notrans = file_name_lookup_under
+				(dir->nn->port, name, O_NOTRANS, 0);
+			if(p_notrans == MACH_PORT_NULL)
+				return EBADF;
+			
 			/*remember we do not have a directory*/
 			isdir = 0;
 			
@@ -700,9 +711,16 @@ netfs_attempt_lookup_improved
 		else
 			{
 			/*lookup the port with the right to read the contents of the directory*/
-			p = file_name_lookup_under(dir->nn->port, name, O_READ | O_DIRECTORY, 0);
+			p = file_name_lookup_under
+				(dir->nn->port, name, flags | O_READ | O_DIRECTORY, 0);
 			if(p == MACH_PORT_NULL)
 				return EBADF; /*not enough rights?*/
+			
+			/*obtain the untranslated version of the file, too (for filters)*/
+			p_notrans = file_name_lookup_under
+				(dir->nn->port, name, O_NOTRANS, 0);
+			if(p_notrans == MACH_PORT_NULL)
+				return EBADF;
 				
 			/*we have a directory here*/
 			isdir = 1;
@@ -749,8 +767,9 @@ netfs_attempt_lookup_improved
 			return err;
 			}
 
-		/*Store the port in the node*/
+		/*Store the ports in the node*/
 		(*node)->nn->port = p;
+		(*node)->nn->port_notrans = p_notrans;
 
 		/*Fill in the flag about the node being a directory*/
 		if(isdir)
