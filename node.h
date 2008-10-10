@@ -78,6 +78,9 @@ struct netnode
 	/*a port to the underlying filesystem*/
 	file_t port;
 	
+	/*the port to the untranslated version of the node*/
+	file_t port_notrans;
+	
 	/*the malloced set of translators which have to be stacked upon this node
 	  and upon its children; the corresponding translators will have to decide
 	  on their own whether to accept directories or not*/
