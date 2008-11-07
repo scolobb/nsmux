@@ -890,6 +890,9 @@ node_set_translators
 		ext = put_in_hurd(str);
 		if(!ext)
 			return ENOMEM;
+
+		/*move str to the next translator in the list*/
+		str += strlen(str) + 1;
 	
 		/*TODO: Better argument-parsing?*/
 	
