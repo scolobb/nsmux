@@ -1,10 +1,10 @@
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 /*lnode.h*/
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 /*Management of cheap 'light nodes'*/
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 /*Based on the code of unionfs translator.*/
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 /*Copyright (C) 2001, 2002, 2005, 2008 Free Software Foundation, Inc.
   Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
 
@@ -22,164 +22,122 @@
   along with this program; if not, write to the Free Software
   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
   USA.*/
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 #ifndef __LNODE_H__
 #define __LNODE_H__
 
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 #include <error.h>
 #include <hurd/netfs.h>
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 
-/*----------------------------------------------------------------------------*/
-/*--------Macros--------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+/*--------Macros-------------------------------------------------------------*/
 /*The possible flags in an lnode*/
-#define FLAG_LNODE_DIR				0x00000001	/*the lnode is a directory*/
-/*----------------------------------------------------------------------------*/
+#define FLAG_LNODE_DIR	0x00000001	/*the lnode is a directory */
+/*---------------------------------------------------------------------------*/
 
-/*----------------------------------------------------------------------------*/
-/*--------Types---------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+/*--------Types--------------------------------------------------------------*/
 /*A candy synonym for the fundamental libnetfs node*/
 typedef struct node node_t;
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 /*A list of lnodes*/
 struct node_element
-	{
-	/*the node associated with the current entry*/
-	node_t * node;
-	
-	/*the next element in the list*/
-	struct node_element * next;
-	};/*struct node_element*/
-/*----------------------------------------------------------------------------*/
-typedef struct node_element * node_list_t;
-/*----------------------------------------------------------------------------*/
+{
+  /*the node associated with the current entry */
+  node_t *node;
+
+  /*the next element in the list */
+  struct node_element *next;
+};				/*struct node_element */
+/*---------------------------------------------------------------------------*/
+typedef struct node_element *node_list_t;
+/*---------------------------------------------------------------------------*/
 /*The light node*/
 struct lnode
-	{
-	/*the name of the lnode*/
-	char * name;
-	
-	/*the length of the name; `name` does not change, and this value is used
-	quite often, therefore calculate it just once*/
-	size_t name_len;
-	
-	/*the full path to the lnode*/
-	char * path;
-	
-	/*the associated flags*/
-	int flags;
-	
-	/*the number of references to this lnode*/
-	int references;
-	
-	/*the reference to the real netfs node*/
-	node_t * node;
-	
-	/*the references to the proxy nodes of this lnode;
-		lnodes do not hold references to */
-	node_list_t proxies;
-	
-	/*the next lnode and the pointer to this lnode from the previous one*/
-	struct lnode * next, **prevp;
-	
-	/*the lnode (directory) in which this node is contained*/
-	struct lnode * dir;
-	
-	/*the beginning of the list of entries contained in this lnode (directory)*/
-	struct lnode * entries;
-	
-	/*the lock, protecting this lnode*/
-	struct mutex lock;
-	};/*struct lnode*/
-/*----------------------------------------------------------------------------*/
+{
+  /*the name of the lnode */
+  char *name;
+
+  /*the length of the name; `name` does not change, and this value is used
+     quite often, therefore calculate it just once */
+  size_t name_len;
+
+  /*the full path to the lnode */
+  char *path;
+
+  /*the associated flags */
+  int flags;
+
+  /*the number of references to this lnode */
+  int references;
+
+  /*the reference to the real netfs node */
+  node_t *node;
+
+  /*the references to the proxy nodes of this lnode;
+     lnodes do not hold references to */
+  node_list_t proxies;
+
+  /*the next lnode and the pointer to this lnode from the previous one */
+  struct lnode *next, **prevp;
+
+  /*the lnode (directory) in which this node is contained */
+  struct lnode *dir;
+
+  /*the beginning of the list of entries contained in this lnode (directory) */
+  struct lnode *entries;
+
+  /*the lock, protecting this lnode */
+  struct mutex lock;
+};				/*struct lnode */
+/*---------------------------------------------------------------------------*/
 typedef struct lnode lnode_t;
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
-/*--------Functions-----------------------------------------------------------*/
+/*--------Functions----------------------------------------------------------*/
 /*Adds a reference to the `lnode` (which must be locked)*/
-void
-lnode_ref_add
-	(
-	lnode_t * node
-	);
-/*----------------------------------------------------------------------------*/
-/*Removes a reference from `node` (which must be locked). If that was the last
-	reference, destroy the node*/
-void
-lnode_ref_remove
-	(
-	lnode_t * node
-	);
-/*----------------------------------------------------------------------------*/
+void lnode_ref_add (lnode_t * node);
+/*---------------------------------------------------------------------------*/
+/*Removes a reference from `node` (which must be locked). If that was
+  the last reference, destroy the node*/
+void lnode_ref_remove (lnode_t * node);
+/*---------------------------------------------------------------------------*/
 /*Creates a new lnode with `name`; the new node is locked and contains
-	a single reference*/
-error_t
-lnode_create
-	(
-	char * name,
-	lnode_t ** node	/*put the result here*/
-	);
-/*----------------------------------------------------------------------------*/
+  a single reference*/
+error_t lnode_create (char *name, lnode_t ** node);
+/*---------------------------------------------------------------------------*/
 /*Destroys the given lnode*/
-void
-lnode_destroy
-	(
-	lnode_t * node	/*destroy this*/
-	);
-/*----------------------------------------------------------------------------*/
-/*Constructs the full path for the given lnode and stores the result both in
-	the parameter and inside the lnode (the same string, actually)*/
-error_t
-lnode_path_construct
-	(
-	lnode_t * node,
-	char ** path	/*store the path here*/
-	);
-/*----------------------------------------------------------------------------*/
+void lnode_destroy (lnode_t * node);
+/*---------------------------------------------------------------------------*/
+/*Constructs the full path for the given lnode and stores the result
+  both in the parameter and inside the lnode (the same string,
+  actually)*/
+error_t lnode_path_construct (lnode_t * node, char **path);
+/*---------------------------------------------------------------------------*/
 /*Gets a light node by its name, locks it and increments its refcount*/
-error_t
-lnode_get
-	(
-	lnode_t * dir,	/*search here*/
-	char * name,		/*search for this name*/
-	lnode_t ** node	/*put the result here*/
-	);
-/*----------------------------------------------------------------------------*/
-/*Install the lnode into the lnode tree: add a reference to `dir` (which must
-	be locked)*/
-void
-lnode_install
-	(
-	lnode_t * dir,	/*install here*/
-	lnode_t * node	/*install this*/
-	);
-/*----------------------------------------------------------------------------*/
+error_t lnode_get (lnode_t * dir,	/*search here */
+		   char *name,	        /*search for this name */
+		   lnode_t ** node	/*put the result here */
+		   );
+/*---------------------------------------------------------------------------*/
+/*Install the lnode into the lnode tree: add a reference to `dir`
+  (which must be locked)*/
+void lnode_install (lnode_t * dir,	/*install here */
+		    lnode_t * node	/*install this */
+		    );
+/*---------------------------------------------------------------------------*/
 /*Unistall the node from the node tree; remove a reference from the lnode*/
-void
-lnode_uninstall
-	(
-	lnode_t * node
-	);
-/*----------------------------------------------------------------------------*/
-/*Makes the specified lnode aware of another proxy. Both `node` and `proxy`
-	must be locked*/
-error_t
-lnode_add_proxy
-	(
-	lnode_t * node,
-	node_t * proxy
-	);
-/*----------------------------------------------------------------------------*/
-/*Removes the specified proxy from the list of proxies of the supplied lnode.
-	`proxy` must not be locked*/
-void
-lnode_remove_proxy
-	(
-	lnode_t * node,
-	node_t * proxy
-	);
-/*----------------------------------------------------------------------------*/
+void lnode_uninstall (lnode_t * node);
+/*---------------------------------------------------------------------------*/
+/*Makes the specified lnode aware of another proxy. Both `node` and
+  `proxy` must be locked*/
+error_t lnode_add_proxy (lnode_t * node, node_t * proxy);
+/*---------------------------------------------------------------------------*/
+/*Removes the specified proxy from the list of proxies of the supplied
+  lnode.  `proxy` must not be locked*/
+void lnode_remove_proxy (lnode_t * node, node_t * proxy);
+/*---------------------------------------------------------------------------*/
 #endif /*__LNODE_H__*/
-

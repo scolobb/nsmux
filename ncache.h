@@ -1,10 +1,10 @@
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 /*ncache.h*/
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 /*The cache of nodes*/
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 /*Based on the code of unionfs translator.*/
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 /*Copyright (C) 2001, 2002, 2005, 2008 Free Software Foundation, Inc.
   Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
 
@@ -22,94 +22,78 @@
   along with this program; if not, write to the Free Software
   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
   USA.*/
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 #ifndef __NCACHE_H__
 #define __NCACHE_H__
 
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 #include <error.h>
 #include <hurd/netfs.h>
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 #include "node.h"
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 
-/*----------------------------------------------------------------------------*/
-/*--------Macros--------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+/*--------Macros-------------------------------------------------------------*/
 /*The default maximal cache size*/
 /*#define NCACHE_SIZE 256*/
 /*SEE ALSO the comment in ncache.c*/
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 
-/*----------------------------------------------------------------------------*/
-/*--------Types---------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+/*--------Types--------------------------------------------------------------*/
 /*A cache chain*/
 struct ncache
-	{
-	/*the MRU end of the cache chain*/
-	node_t * mru;
-	
-	/*the LRU end of the cache chain*/
-	node_t * lru;
-	
-	/*the maximal number of nodes to cache*/
-	/*int size_max;*/
-	/*SEE ALSO the comment in ncache.c*/
-	
-	/*the current length of the cache chain*/
-	int size_current;
-	
-	/*a lock*/
-	struct mutex lock;
-	};/*struct ncache*/
-/*----------------------------------------------------------------------------*/
-typedef struct ncache ncache_t;
-/*----------------------------------------------------------------------------*/
+{
+  /*the MRU end of the cache chain */
+  node_t *mru;
 
-/*----------------------------------------------------------------------------*/
-/*--------Global Variables----------------------------------------------------*/
+  /*the LRU end of the cache chain */
+  node_t *lru;
+
+  /*the maximal number of nodes to cache */
+  /*int size_max; */
+  /*SEE ALSO the comment in ncache.c */
+
+  /*the current length of the cache chain */
+  int size_current;
+
+  /*a lock */
+  struct mutex lock;
+};				/*struct ncache */
+/*---------------------------------------------------------------------------*/
+typedef struct ncache ncache_t;
+/*---------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------*/
+/*--------Global Variables---------------------------------------------------*/
 /*The cache size (may be overwritten by the user)*/
 /*extern int cache_size;*/
 /*SEE ALSO the comment in ncache.c*/
-/*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
-/*--------Functions-----------------------------------------------------------*/
+/*--------Functions----------------------------------------------------------*/
 /*Initializes the node cache*/
-void
-ncache_init
-	(
-	/*int size_max*/
-	void
-	);
-/*----------------------------------------------------------------------------*/
-/*Looks up the lnode and stores the result in `node`; creates a new entry
-	in the cache if the lookup fails*/
-error_t
-ncache_node_lookup
-	(
-	lnode_t * lnode,	/*search for this*/
-	node_t ** node		/*put the result here*/
-	);
-/*----------------------------------------------------------------------------*/
-/*Removes the given node from the cache. Does not release the reference held
-	by the cache (for some further finalization actions on the node)*/
+void ncache_init (void);
+/*---------------------------------------------------------------------------*/
+/*Looks up the lnode and stores the result in `node`; creates a new
+  entry in the cache if the lookup fails*/
+error_t ncache_node_lookup (lnode_t * lnode,	/*search for this */
+			    node_t ** node	/*put the result here */
+			    );
+/*---------------------------------------------------------------------------*/
+/*Removes the given node from the cache. Does not release the
+  reference held by the cache (for some further finalization actions
+  on the node)*/
 /*Nodes will NOT be removed from the cache automatically*/
-void
-ncache_node_remove
-	(
-	node_t * node
-	);
-/*----------------------------------------------------------------------------*/
+void ncache_node_remove (node_t * node);
+/*---------------------------------------------------------------------------*/
 /*Resets the node cache*/
 /*No references to nodes are released*/
-void
-ncache_reset(void);
-/*----------------------------------------------------------------------------*/
+void ncache_reset (void);
+/*---------------------------------------------------------------------------*/
 /*Adds the given node to the cache*/
-void
-ncache_node_add
-	(
-	node_t * node	/*the node to add*/
-	);
-/*----------------------------------------------------------------------------*/
+void ncache_node_add (node_t * node);
+/*---------------------------------------------------------------------------*/
 #endif /*__NCACHE_H__*/
