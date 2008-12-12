@@ -201,9 +201,10 @@ error_t netfs_validate_stat (struct node * np, struct iouser * cred)
 	    }
 	  else
 	    {
-	      /*We, most probably, have something which is not a directory. Therefore
-	         we will open the port and close it after the stat, so that additional
-	         resources are not consumed. */
+	      /*We, most probably, have something which is not a
+	         directory. Therefore we will open the port and close
+	         it after the stat, so that additional resources are
+	         not consumed. */
 
 	      /*the parent node of the current node */
 	      node_t *dnp;
@@ -632,39 +633,52 @@ error_t
     /*If this file is not a directory */
     if (err || !S_ISDIR (stat.st_mode))
       {
-	/*lookup the required file with the supplied flags */
-	p = file_name_lookup_under (dir->nn->port, name, flags, 0);
-	if (p == MACH_PORT_NULL)
-	  return EBADF;
-
-	/*obtain the untranslated version of the file, too (for filters) */
-	p_notrans = file_name_lookup_under
-	  (dir->nn->port, name, O_NOTRANS, 0);
-	if (p_notrans == MACH_PORT_NULL)
-	  return EBADF;
-
 	/*remember we do not have a directory */
 	isdir = 0;
 
-	/*If a proxy node is not required */
 	if (!proxy)
-	  /*stop here, we want only the port to the file */
-	  return 0;
+	  {
+	    /*We don't need to do lookups here if a proxy shadow node
+	      is required. The lookup will be done by the translator
+	      starting procedure.*/
+	    p = file_name_lookup_under (dir->nn->port, name, flags, 0);
+	    if (p == MACH_PORT_NULL)
+	      return EBADF;
+
+	    /*obtain the untranslated version of the file, too (for filters) */
+	    p_notrans = file_name_lookup_under
+	      (dir->nn->port, name, O_NOTRANS, 0);
+	    if (p_notrans == MACH_PORT_NULL)
+	      return EBADF;
+
+	    /*If a proxy node is not required */
+	    if (!proxy)
+	      /*stop here, we want only the port to the file */
+	      return 0;
+	  }
+	else
+	    p = p_notrans = MACH_PORT_NULL;
       }
     else
       {
-	/*lookup the port with the right to read the contents of the
-	  directory */
-	p = file_name_lookup_under
-	  (dir->nn->port, name, flags | O_READ | O_DIRECTORY, 0);
-	if (p == MACH_PORT_NULL)
-	  return EBADF;		/*not enough rights? */
+	if (!lastcomp || !proxy)
+	  {
+	    p = file_name_lookup_under
+	      (dir->nn->port, name, flags | O_READ | O_DIRECTORY, 0);
+	    if (p == MACH_PORT_NULL)
+	      return EBADF;		/*not enough rights? */
 
-	/*obtain the untranslated version of the file, too (for filters) */
-	p_notrans = file_name_lookup_under
-	  (dir->nn->port, name, O_NOTRANS, 0);
-	if (p_notrans == MACH_PORT_NULL)
-	  return EBADF;
+	    /*obtain the untranslated version of the file, too (for filters) */
+	    p_notrans = file_name_lookup_under
+	      (dir->nn->port, name, O_NOTRANS, 0);
+	    if (p_notrans == MACH_PORT_NULL)
+	      return EBADF;
+	  }
+	else
+	  /*If we are at the last component of the path and need to
+	    open a directory, do not do the lookup; the translator
+	    starting procedure will do that.*/
+	  p = p_notrans = MACH_PORT_NULL;
 
 	/*we have a directory here */
 	isdir = 1;
@@ -1018,7 +1032,7 @@ error_t
       else
 	{
 	  /* Attempt a lookup on the next pathname component. */
-	  /*error = netfs_attempt_lookup (diruser->user, dnp, filename, &np); */
+	  /*error = netfs_attempt_lookup (diruser->user, dnp, filename, &np);*/
 
 	  /*attempt an improved lookup on the next pathname component */
 	  error = netfs_attempt_lookup_improved
@@ -1039,7 +1053,7 @@ error_t
 		  /*set the list of translators on this node */
 		  node_set_translators
 		    (diruser, np, np->nn->trans, np->nn->ntrans, flags,
-		     &file);
+		     filename, &file);
 
 		  /*lock the the node and add a new reference */
 		  mutex_lock (&np->lock);

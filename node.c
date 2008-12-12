@@ -658,10 +658,12 @@ error_t node_unlink_file (node_t * dir, char *name)
 }				/*node_unlink_file */
 
 /*---------------------------------------------------------------------------*/
-/*Sets the given translators on the specified node*/
+/*Sets the given translators on the specified node. Looks up the node
+  as required by the translators being started.*/
 error_t node_set_translators (struct protid * diruser, node_t * np,
 			      char *trans,	/*set these on `node` */
-			      size_t ntrans, int flags, mach_port_t * port)
+			      size_t ntrans, int flags, char * filename,
+			      mach_port_t * port)
 {
   error_t err;
   mach_port_t p;
@@ -749,6 +751,19 @@ error_t node_set_translators (struct protid * diruser, node_t * np,
 	err = check_open_permissions (diruser->user, &np->nn_stat, flags);
 	if (err)
 	  return err;
+
+	/*open the ports to underlying real file as required by the
+	  translator and a service port (TODO: deal with this
+	  ``service'' port) */
+	np->nn->port = file_name_lookup_under
+	  (diruser->po->np->nn->port, filename, flags, 0);
+	if(!np->nn->port)
+	  return ENOENT;
+
+	np->nn->port_notrans = file_name_lookup_under
+	  (diruser->po->np->nn->port, filename, flags | O_NOTRANS, 0);
+	if(!np->nn->port)
+	  return ENOENT;
 
 	/*duplicate the supplied user */
 	err = iohelp_dup_iouser (&user, diruser->user);

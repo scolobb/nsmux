@@ -158,7 +158,8 @@ error_t node_unlink_file (node_t * dir, char *name);
   port to the topmost one opened as `flags` require*/
 error_t node_set_translators (struct protid *diruser, node_t * np,
 			      char *trans,	/*set these on `node` */
-			      size_t ntrans, int flags, mach_port_t * port);
+			      size_t ntrans, int flags, char * filename,
+			      mach_port_t * port);
 /*---------------------------------------------------------------------------*/
 /*Kill the topmost translator for this node*/
 /*This function will normally be called from netfs_attempt_lookup,
