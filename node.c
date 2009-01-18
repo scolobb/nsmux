@@ -94,9 +94,10 @@ error_t node_create (lnode_t * lnode, node_t ** node)
       node_new->nn->flags = 0;
       node_new->nn->ncache_next = node_new->nn->ncache_prev = NULL;
 
-      /*initialize the list of translators */
-      node_new->nn->trans = NULL;
-      node_new->nn->ntrans = node_new->nn->translen = 0;
+      /*initialize the data fields dealing with positioning this node
+	in the dynamic translator stack */
+      node_new->nn->trans_cntl = MACH_PORT_NULL;
+      node_new->nn->below = NULL;
 
       /*store the result of creation in the second parameter */
       *node = node_new;
@@ -148,9 +149,10 @@ error_t node_create_proxy (lnode_t * lnode, node_t ** node)
       node_new->nn->flags = 0;
       node_new->nn->ncache_next = node_new->nn->ncache_prev = NULL;
 
-      /*initialize the list of translators */
-      node_new->nn->trans = NULL;
-      node_new->nn->ntrans = node_new->nn->translen = 0;
+      /*initialize the data fields dealing with positioning this node
+	in the dynamic translator stack */
+      node_new->nn->trans_cntl = MACH_PORT_NULL;
+      node_new->nn->below = NULL;
 
       /*store the result of creation in the second parameter */
       *node = node_new;
@@ -172,12 +174,8 @@ void node_destroy (node_t * np)
   if (np->nn->port != MACH_PORT_NULL)
     PORT_DEALLOC (np->nn->port);
 
-  /*If there are translators to kill */
-  if (np->nn->lnode->dir && np->nn->trans)
-    {
-      /*kill all translators on the underlying nodes */
-      node_kill_translators (np);
-    }
+  /*TODO: If this node is a shadow node, kill the translator sitting
+    on this node. */
 
   /*Lock the lnode corresponding to the current node */
   mutex_lock (&np->nn->lnode->lock);
@@ -665,6 +663,7 @@ error_t node_set_translators (struct protid * diruser, node_t * np,
 			      size_t ntrans, int flags, char * filename,
 			      mach_port_t * port)
 {
+#if 0
   error_t err;
   mach_port_t p;
 
@@ -757,11 +756,6 @@ error_t node_set_translators (struct protid * diruser, node_t * np,
 	  ``service'' port) */
 	np->nn->port = file_name_lookup_under
 	  (diruser->po->np->nn->port, filename, flags, 0);
-	if(!np->nn->port)
-	  return ENOENT;
-
-	np->nn->port_notrans = file_name_lookup_under
-	  (diruser->po->np->nn->port, filename, flags | O_NOTRANS, 0);
 	if(!np->nn->port)
 	  return ENOENT;
 
@@ -897,40 +891,10 @@ error_t node_set_translators (struct protid * diruser, node_t * np,
   /*Return the port */
   *port = p;
 
+#endif
+
   /*Everything is OK here */
   return 0;
 }				/*node_set_translators */
-
-/*---------------------------------------------------------------------------*/
-/*Kills all translators on the nodes belonging to the given directory*/
-void node_kill_translators (node_t * node)
-{
-  /*If the node has no translators */
-  if (node->nn->trans == NULL)
-    /*nothing to do */
-    return;
-
-  error_t err = 0;
-
-  /*The current element in the port list */
-  port_el_t *p_el;
-
-  /*While the list of control ports is not empty */
-  for (p_el = node->nn->cntl_ports; p_el; p_el = node->nn->cntl_ports)
-    {
-      /*kill the current translator */
-      err = fsys_goaway (p_el->p, 0);
-
-      /*If the translator says it is busy, force it to go away */
-      if (err == EBUSY)
-	err = fsys_goaway (p_el->p, FSYS_GOAWAY_FORCE);
-
-      /*move the beginning of the list of control ports forward */
-      node->nn->cntl_ports = p_el->next;
-
-      /*destroy the current cell in the list of ports */
-      free (p_el);
-    }
-}				/*node_kill_translators */
 
 /*---------------------------------------------------------------------------*/

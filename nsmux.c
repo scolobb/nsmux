@@ -551,9 +551,6 @@ error_t
   /*The port to the requested file */
   mach_port_t p;
 
-  /*The port to the untranslated version of the requested file */
-  mach_port_t p_notrans;
-
   /*The lnode corresponding to the entry we are supposed to fetch */
   lnode_t *lnode;
 
@@ -591,8 +588,6 @@ error_t
 	/*If there is some port, free it */
 	if (p != MACH_PORT_NULL)
 	  PORT_DEALLOC (p);
-	if (p_notrans != MACH_PORT_NULL)
-	  PORT_DEALLOC (p_notrans);
       }
     /*If there is a node to return */
     if (*node)
@@ -645,19 +640,13 @@ error_t
 	    if (p == MACH_PORT_NULL)
 	      return EBADF;
 
-	    /*obtain the untranslated version of the file, too (for filters) */
-	    p_notrans = file_name_lookup_under
-	      (dir->nn->port, name, O_NOTRANS, 0);
-	    if (p_notrans == MACH_PORT_NULL)
-	      return EBADF;
-
 	    /*If a proxy node is not required */
 	    if (!proxy)
 	      /*stop here, we want only the port to the file */
 	      return 0;
 	  }
 	else
-	    p = p_notrans = MACH_PORT_NULL;
+	    p = MACH_PORT_NULL;
       }
     else
       {
@@ -667,18 +656,12 @@ error_t
 	      (dir->nn->port, name, flags | O_READ | O_DIRECTORY, 0);
 	    if (p == MACH_PORT_NULL)
 	      return EBADF;		/*not enough rights? */
-
-	    /*obtain the untranslated version of the file, too (for filters) */
-	    p_notrans = file_name_lookup_under
-	      (dir->nn->port, name, O_NOTRANS, 0);
-	    if (p_notrans == MACH_PORT_NULL)
-	      return EBADF;
 	  }
 	else
 	  /*If we are at the last component of the path and need to
 	    open a directory, do not do the lookup; the translator
 	    starting procedure will do that.*/
-	  p = p_notrans = MACH_PORT_NULL;
+	  p =MACH_PORT_NULL;
 
 	/*we have a directory here */
 	isdir = 1;
@@ -726,9 +709,8 @@ error_t
 	return err;
       }
 
-    /*Store the ports in the node */
+    /*Store the port in the node */
     (*node)->nn->port = p;
-    (*node)->nn->port_notrans = p_notrans;
 
     /*Fill in the flag about the node being a directory */
     if (isdir)
@@ -865,12 +847,6 @@ error_t
          which does not end in a comma and the corresponding terminal 0 */
       ++ntrans;
       ++translen;
-
-      /*copy the list of translators we have just built in the new
-	proxy node */
-      (*node)->nn->trans = trans;
-      (*node)->nn->ntrans = ntrans;
-      (*node)->nn->translen = translen;
 
       /*we don't own the list of translators any more */
       trans = NULL;
@@ -1047,21 +1023,8 @@ error_t
 		/*just return the port */
 		goto justport;
 
-	      /*If a proxy for setting up translators has just been created */
-	      if (np->nn->trans)
-		{
-		  /*set the list of translators on this node */
-		  node_set_translators
-		    (diruser, np, np->nn->trans, np->nn->ntrans, flags,
-		     filename, &file);
-
-		  /*lock the the node and add a new reference */
-		  mutex_lock (&np->lock);
-		  netfs_nref (np);
-
-		  /*return `file` as the resulting port */
-		  goto justport;
-		}
+	      /*If a shadow node has just been created, set the
+		required translator on it */
 	    }
 	}
 
@@ -1629,23 +1592,7 @@ kern_return_t
   /*If the node is not the root node of nsmux */
   if (np != netfs_root_node)
     {
-      /*the control port to the translator sitting on the real node */
-      mach_port_t p;
-
-      /*obtain the control port for the translator sitting on the real node;
-         provide the bottommost translator, so that the filter (and this is
-         most probably a request of such a translator) should be able to trace
-         the real translator stack */
-      err = file_get_translator_cntl (np->nn->port_notrans, &p);
-      if (err)
-	return err;
-
-      /*set the parameters accordingly */
-      *cntltype = MACH_MSG_TYPE_MOVE_SEND;
-      *cntl = p;
-
-      /*return the result of operations */
-      return err;
+      /*TODO: The functionality here will be provided later */
     }
 
   /*Lock the node */

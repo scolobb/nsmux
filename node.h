@@ -78,22 +78,13 @@ struct netnode
   /*a port to the underlying filesystem */
   file_t port;
 
-  /*the port to the untranslated version of the node */
-  file_t port_notrans;
+  /*the control port of the translator sitting on this node, in case
+    this node is a shadow node */
+  fsys_t trans_cntl;
 
-  /*the malloced set of translators which have to be stacked upon this node
-     and upon its children; the corresponding translators will have to decide
-     on their own whether to accept directories or not */
-  char *trans;
-
-  /*the number of translators listed in `translators` */
-  size_t ntrans;
-
-  /*the length of the list of translators (in bytes) */
-  size_t translen;
-
-  /*the list of control ports to the translators being set on this node */
-  port_el_t *cntl_ports;
+  /*the reference to the shadow node that is below the current shadow
+    node in the dynamic translator stack */
+  node_t * below;
 
   /*the neighbouring entries in the cache */
   node_t *ncache_prev, *ncache_next;
@@ -160,15 +151,5 @@ error_t node_set_translators (struct protid *diruser, node_t * np,
 			      char *trans,	/*set these on `node` */
 			      size_t ntrans, int flags, char * filename,
 			      mach_port_t * port);
-/*---------------------------------------------------------------------------*/
-/*Kill the topmost translator for this node*/
-/*This function will normally be called from netfs_attempt_lookup,
-  therefore it's better that the caller should provide the parent node
-  for `node`.*/
-error_t node_kill_translator (node_t * dir, node_t * node);
-/*---------------------------------------------------------------------------*/
-/*Kills all translators on the current node or on all underlying nodes
-  it the current node is a directory*/
-void node_kill_translators (node_t * node);
 /*---------------------------------------------------------------------------*/
 #endif /*__NODE_H__*/
