@@ -465,15 +465,14 @@ error_t
 /*---------------------------------------------------------------------------*/
 /*Performs an advanced lookup of file `name` under `dir`. If the
   lookup of the last component of the path is requested (`lastcomp` is
-  1), it is not a directory and no translators are required (`name`
-  does not contain ',,' ), the function will simply open the required
-  file and return the port in `file`. In other cases it will create a
-  proxy node and return it in `node`.*/
+  1), it is not a directory and the creation of proxy (shadow) node is
+  not required (`proxy` is 1), the function will simply open the
+  required file and return the port in `file`. In other cases it will
+  create a proxy node and return it in `node`.*/
 error_t
   netfs_attempt_lookup_improved
-  (struct iouser * user,
-   struct node * dir,
-   char *name, int flags, int lastcomp, node_t ** node, file_t * file)
+  (struct iouser * user, struct node * dir, char *name, int flags,
+   int lastcomp, node_t ** node, file_t * file, int proxy)
 {
   LOG_MSG ("netfs_attempt_lookup_improved: '%s'", name);
 
@@ -554,31 +553,12 @@ error_t
   /*The lnode corresponding to the entry we are supposed to fetch */
   lnode_t *lnode;
 
-  /*The position of ',,' in the name */
-  char *sep;
-
-  /*A pointer for various operations on strings */
-  char *str;
-
-  /*A list of translators */
-  char *trans = NULL;
-
-  /*The number of translators in the list */
-  size_t ntrans;
-
-  /*The length of the list of translators */
-  size_t translen;
-
   /*Is the looked up file a directory */
   int isdir;
 
   /*Finalizes the execution of this function */
   void finalize (void)
   {
-    /*Free the list of translators, if it has been allocated */
-    if (trans)
-      free (trans);
-
     /*If some errors have occurred */
     if (err)
       {
@@ -636,6 +616,7 @@ error_t
 	    /*We don't need to do lookups here if a proxy shadow node
 	      is required. The lookup will be done by the translator
 	      starting procedure.*/
+
 	    p = file_name_lookup_under (dir->nn->port, name, flags, 0);
 	    if (p == MACH_PORT_NULL)
 	      return EBADF;
@@ -737,138 +718,18 @@ error_t
     return 0;
   }				/*lookup */
 
-  /*While pairs of commas can still be found in the name */
-  for (sep = strstr (name, ",,"); sep; sep = strstr (sep, ",,"))
+  /*Simply lookup the provided name, without creating the proxy, if not
+    necessary (i.e. when the file is not a directory) */
+  err = lookup (name, flags, 0);
+  if (err)
     {
-      /*If the separator is situated at the beginning, it is an error */
-      if (sep == name)
-	{
-	  finalize ();
-	  return ENOENT;
-	}
-
-      /*If current pair of commas is not escaped */
-      if (*(sep + 2) != ',')
-	/*stop here, we've found what we needed */
-	break;
-
-      /*remove the escaping ',' from the string */
-      for (str = ++sep; *str; str[-1] = *str, ++str);
-      str[-1] = 0;
-
-      /*skip the current pair of commas */
-      ++sep;
+      finalize ();
+      return err;
     }
 
-  /*If the control sequence has been found */
-  if (sep)
-    {
-      /*the name of the file to lookup */
-      char *name_cpy;
-
-      /*copy the name */
-      /*just copy the pointer */
-      name_cpy = /*strdup */ (name);
-      if (!name_cpy)
-	{
-	  err = ENOMEM;
-	  finalize ();
-	  return err;
-	}
-
-      /*move sep to name_cpy */
-      sep = name_cpy + (sep - name);
-
-      /*remove the separator from the string */
-      *(sep++) = 0;
-      *(sep++) = 0;
-
-      /*try to lookup the file with the specified name and create a proxy
-         node for it (since we need to start translators) */
-      err = lookup (name_cpy, flags, 1);
-
-      /*If the lookup failed */
-      if (err)
-	{
-	  /*say that the file has not been found */
-	  finalize ();
-	  return ENOENT;
-	}
-
-      /*duplicate the part of the name containing the list of translators
-         and store the copy in the lnode */
-      trans = strdup (sep);
-      if (!trans)
-	{
-	  finalize ();
-	  return err;
-	}
-
-      /*obtain a pointer to the beginning of the list of translators */
-      str = trans;
-
-      /*a pointer for removal of extra commas */
-      char *p;
-
-      /*Go through the list of translators */
-      for (translen = ntrans = 0; *str; ++str)
-	{
-	  /*If the current character is a comma */
-	  if (*str == ',')
-	    {
-	      /*While the next characters are commas, too */
-	      for (; str[1] == ',';)
-		{
-		  /*shift the string leftwards */
-		  for (p = str + 1; *p; p[-1] = *p, ++p);
-		  p[-1] = 0;
-		}
-
-	      /*If the next character is the terminal 0 */
-	      if (!str[1])
-		{
-		  /*this comma is extra */
-		  *str = 0;
-		  break;
-		}
-
-	      /*make it a separator zero */
-	      *str = 0;
-
-	      /*we have just finished going through a new component */
-	      ++ntrans;
-	    }
-
-	  /*take the current character into account */
-	  ++translen;
-	}
-
-      /*take into consideration the last element in the list,
-         which does not end in a comma and the corresponding terminal 0 */
-      ++ntrans;
-      ++translen;
-
-      /*we don't own the list of translators any more */
-      trans = NULL;
-      ntrans = 0;
-      translen = 0;
-    }
-  /*The control sequence ',,' has not been found */
-  else
-    {
-      /*simply lookup the provided name, without creating the proxy, if not
-         necessary (i.e. when the file is not a directory) */
-      err = lookup (name, flags, 0);
-      if (err)
-	{
-	  finalize ();
-	  return err;
-	}
-
-      /*if we have looked up a regular file, store the port to it in *`file` */
-      if (!isdir)
-	*file = p;
-    }
+  /*if we have looked up a regular file, store the port to it in *`file` */
+  if (!isdir)
+    *file = p;
 
   /*Everything OK here */
   finalize ();
@@ -1011,8 +872,8 @@ error_t
 	  /*error = netfs_attempt_lookup (diruser->user, dnp, filename, &np);*/
 
 	  /*attempt an improved lookup on the next pathname component */
-	  error = netfs_attempt_lookup_improved
-	    (diruser->user, dnp, filename, flags, lastcomp, &np, &file);
+/* 	  error = netfs_attempt_lookup_improved */
+/* 	    (diruser->user, dnp, filename, flags, lastcomp, &np, &file); */
 
 	  /*If no problems have occurred during the lookup and we do
 	    not have O_EXCL */

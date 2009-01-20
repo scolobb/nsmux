@@ -122,9 +122,8 @@ error_t
   proxy node and return it in `node`.*/
 error_t
   netfs_attempt_lookup_improved
-  (struct iouser *user,
-   struct node *dir,
-   char *name, int flags, int lastcomp, node_t ** node, file_t * file);
+  (struct iouser * user, struct node * dir, char *name, int flags,
+   int lastcomp, node_t ** node, file_t * file, int proxy);
 /*---------------------------------------------------------------------------*/
 /*Responds to the RPC dir_lookup*/
 error_t
