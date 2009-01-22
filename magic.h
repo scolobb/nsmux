@@ -1,9 +1,7 @@
 /*---------------------------------------------------------------------------*/
-/*options.h*/
+/*magic.h*/
 /*---------------------------------------------------------------------------*/
-/*Declarations for parsing the command line switches*/
-/*---------------------------------------------------------------------------*/
-/*Based on the code of unionfs translator.*/
+/*Declaration of functions for handling the magic syntax.*/
 /*---------------------------------------------------------------------------*/
 /*Copyright (C) 2001, 2002, 2005, 2008 Free Software Foundation, Inc.
   Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
@@ -23,35 +21,19 @@
   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
   USA.*/
 /*---------------------------------------------------------------------------*/
-#ifndef __OPTIONS_H__
-#define __OPTIONS_H__
+#ifndef __MAGIC_H__
+#define __MAGIC_H__
 
 /*---------------------------------------------------------------------------*/
-/*--------Macros-------------------------------------------------------------*/
-/*Command Line Options*/
-
-/*The possible short options*/
-#define OPT_CACHE_SIZE 'c'
+/*---------Functions---------------------------------------------------------*/
+/*Locates the first unescaped magic separator in the supplied file
+  name. Returns NULL in case it finds nothing.*/
+char * magic_find_sep (const char * name);
 /*---------------------------------------------------------------------------*/
-/*The corresponding long options*/
-#define OPT_LONG_CACHE_SIZE "cache-size"
-/*---------------------------------------------------------------------------*/
-/*Makes a long option out of option name*/
-#define OPT_LONG(o) "--"o
+/*Unescapes escaped separators in the substring of the file name
+  starting at `name` of length `sz`.*/
+void magic_unescape (char * name, int sz);
 /*---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------*/
-/*--------Global Variables---------------------------------------------------*/
-/*The argp parser for startup arguments*/
-extern struct argp argp_startup;
-/*---------------------------------------------------------------------------*/
-/*The argp parser for rutime arguments*/
-extern struct argp argp_runtime;
-/*---------------------------------------------------------------------------*/
-/*The number of nodes in cache (see ncache.{c,h})*/
-extern int ncache_size;
-/*---------------------------------------------------------------------------*/
-/*The directory to mirror*/
-extern char *dir;
-/*---------------------------------------------------------------------------*/
-#endif /*__OPTIONS_H__*/
+#endif /*__LIB_H__*/

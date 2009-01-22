@@ -1,9 +1,7 @@
 /*---------------------------------------------------------------------------*/
-/*options.h*/
+/*magic.h*/
 /*---------------------------------------------------------------------------*/
-/*Declarations for parsing the command line switches*/
-/*---------------------------------------------------------------------------*/
-/*Based on the code of unionfs translator.*/
+/*Declaration of functions for handling the magic syntax.*/
 /*---------------------------------------------------------------------------*/
 /*Copyright (C) 2001, 2002, 2005, 2008 Free Software Foundation, Inc.
   Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
@@ -23,35 +21,62 @@
   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
   USA.*/
 /*---------------------------------------------------------------------------*/
-#ifndef __OPTIONS_H__
-#define __OPTIONS_H__
 
 /*---------------------------------------------------------------------------*/
-/*--------Macros-------------------------------------------------------------*/
-/*Command Line Options*/
-
-/*The possible short options*/
-#define OPT_CACHE_SIZE 'c'
-/*---------------------------------------------------------------------------*/
-/*The corresponding long options*/
-#define OPT_LONG_CACHE_SIZE "cache-size"
-/*---------------------------------------------------------------------------*/
-/*Makes a long option out of option name*/
-#define OPT_LONG(o) "--"o
+#include <string.h>
 /*---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------*/
-/*--------Global Variables---------------------------------------------------*/
-/*The argp parser for startup arguments*/
-extern struct argp argp_startup;
+#include "magic.h"
 /*---------------------------------------------------------------------------*/
-/*The argp parser for rutime arguments*/
-extern struct argp argp_runtime;
+
 /*---------------------------------------------------------------------------*/
-/*The number of nodes in cache (see ncache.{c,h})*/
-extern int ncache_size;
+/*---------Functions---------------------------------------------------------*/
+/*Locates the first unescaped magic separator in the supplied file
+  name. Returns NULL in case it finds nothing.*/
+char * magic_find_sep (const char * name)
+{
+  /*The position of the separator */
+  char * sep = NULL;
+
+  /*Go through all occurrences of the separator sequence */
+  for (sep = strstr (name, ",,"); sep; sep = strstr (sep, ",,"))
+    {
+      /*if the current separator is not escaped, stop */
+      if (sep[2] != ',')
+	break;
+
+      sep += 2;
+    }
+
+  return sep;
+}				/*magic_process_find_sep */
+
 /*---------------------------------------------------------------------------*/
-/*The directory to mirror*/
-extern char *dir;
+/*Unescapes escaped separators in the substring of the file name
+  starting at `name` of length `sz`.*/
+void magic_unescape (char * name, int sz)
+{
+  /*A pointer for string operations */
+  char * str = NULL;
+
+  /*The position of the escaped separator */
+  char * esc = NULL;
+
+  /*Go through all occurrences of the separator sequence. Note that we
+    would like the whole separator to be enclosed in the substring of
+    length `sz`, hence the +2. */
+  for 
+    (
+     esc = strstr (name, ",,,"); esc && (esc - name + 2 < sz);
+     esc = strstr (esc, ",,,")
+     )
+    {
+      /*we've found and escaped separator; remove the escaping comma
+	from the string */
+      for (str = ++esc; *str; str[-1] = *str, ++str);
+      str[-1] = 0;
+      --sz;
+    }
+}				/*magic_unescape */
 /*---------------------------------------------------------------------------*/
-#endif /*__OPTIONS_H__*/
