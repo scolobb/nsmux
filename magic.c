@@ -32,8 +32,8 @@
 
 /*---------------------------------------------------------------------------*/
 /*---------Functions---------------------------------------------------------*/
-/*Locates the first unescaped magic separator in the supplied file
-  name. Returns NULL in case it finds nothing.*/
+/*Locates the first unescaped magic separator in the supplied
+  filename. Returns NULL in case it finds nothing.*/
 char * magic_find_sep (const char * name)
 {
   /*The position of the separator */
@@ -53,7 +53,7 @@ char * magic_find_sep (const char * name)
 }				/*magic_process_find_sep */
 
 /*---------------------------------------------------------------------------*/
-/*Unescapes escaped separators in the substring of the file name
+/*Unescapes escaped separators in the substring of the filename
   starting at `name` of length `sz`.*/
 void magic_unescape (char * name, int sz)
 {

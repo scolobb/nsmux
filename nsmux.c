@@ -38,6 +38,7 @@
 #include "debug.h"
 #include "options.h"
 #include "ncache.h"
+#include "magic.h"
 /*---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------*/
@@ -615,7 +616,8 @@ error_t
 	  {
 	    /*We don't need to do lookups here if a proxy shadow node
 	      is required. The lookup will be done by the translator
-	      starting procedure.*/
+	      starting procedure. Just check whether the file
+	      exists.*/
 
 	    p = file_name_lookup_under (dir->nn->port, name, flags, 0);
 	    if (p == MACH_PORT_NULL)
@@ -642,7 +644,7 @@ error_t
 	  /*If we are at the last component of the path and need to
 	    open a directory, do not do the lookup; the translator
 	    starting procedure will do that.*/
-	  p =MACH_PORT_NULL;
+	  p = MACH_PORT_NULL;
 
 	/*we have a directory here */
 	isdir = 1;
@@ -772,6 +774,9 @@ error_t
      when not proxy nodes are to be created) */
   io_statbuf_t stat;
 
+  /*The position of the magic separator in the filename */
+  char * sep;
+
   if (!diruser)
     return EOPNOTSUPP;
 
@@ -871,21 +876,24 @@ error_t
 	  /* Attempt a lookup on the next pathname component. */
 	  /*error = netfs_attempt_lookup (diruser->user, dnp, filename, &np);*/
 
-	  /*attempt an improved lookup on the next pathname component */
-/* 	  error = netfs_attempt_lookup_improved */
-/* 	    (diruser->user, dnp, filename, flags, lastcomp, &np, &file); */
+	  /*try to find the magic separator in the filename */
+	  sep = magic_find_sep (filename);
 
-	  /*If no problems have occurred during the lookup and we do
-	    not have O_EXCL */
-	  if (!error && !excl)
+	  if (sep)
 	    {
-	      /*If a simple file has been looked up */
-	      if (file)
-		/*just return the port */
-		goto justport;
+	      /*TODO: Create a shadow node and start a translator
+		here. */
+	    }
+	  else
+	    {
+	      /*We have to do an ordinary lookup */
 
-	      /*If a shadow node has just been created, set the
-		required translator on it */
+	      error = netfs_attempt_lookup_improved
+		(diruser->user, dnp, filename, flags, lastcomp, &np, &file, 0);
+	      if (!error && !excl && (file != MACH_PORT_NULL))
+		/*We have looked up an ordinary file, no proxy nodes
+		  have been created; finalize and stop */
+		goto justport;
 	    }
 	}
 
@@ -1586,4 +1594,3 @@ int main (int argc, char **argv)
 }				/*main */
 
 /*---------------------------------------------------------------------------*/
-                                                                                         

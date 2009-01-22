@@ -26,14 +26,14 @@
 
 /*---------------------------------------------------------------------------*/
 /*---------Functions---------------------------------------------------------*/
-/*Locates the first unescaped magic separator in the supplied file
-  name. Returns NULL in case it finds nothing.*/
+/*Locates the first unescaped magic separator in the supplied
+  filename. Returns NULL in case it finds nothing.*/
 char * magic_find_sep (const char * name);
 /*---------------------------------------------------------------------------*/
-/*Unescapes escaped separators in the substring of the file name
+/*Unescapes escaped separators in the substring of the filename
   starting at `name` of length `sz`.*/
 void magic_unescape (char * name, int sz);
 /*---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------*/
-#endif /*__LIB_H__*/
+#endif /*__MAGIC_H__*/
