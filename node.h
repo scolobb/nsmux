@@ -145,11 +145,12 @@ error_t node_get_size (node_t * dir, OFFSET_T * off);
 /*Remove the file called `name` under `dir`*/
 error_t node_unlink_file (node_t * dir, char *name);
 /*---------------------------------------------------------------------------*/
-/*Sets the given translators on the specified node and returns the
-  port to the topmost one opened as `flags` require*/
-error_t node_set_translators (struct protid *diruser, node_t * np,
-			      char *trans,	/*set these on `node` */
-			      size_t ntrans, int flags, char * filename,
-			      mach_port_t * port);
+/*Starts translator `trans` on the (shadow) node `np`, which should
+  mirror the file `filename`, and returns the port `port` to the root
+  of the translator opened as `flags.`*/
+error_t 
+  node_set_translator
+  (struct protid *diruser, node_t * np, char * trans, int flags,
+   char * filename, mach_port_t * port);
 /*---------------------------------------------------------------------------*/
 #endif /*__NODE_H__*/

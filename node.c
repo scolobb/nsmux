@@ -656,14 +656,14 @@ error_t node_unlink_file (node_t * dir, char *name)
 }				/*node_unlink_file */
 
 /*---------------------------------------------------------------------------*/
-/*Sets the given translators on the specified node. Looks up the node
-  as required by the translators being started.*/
-error_t node_set_translators (struct protid * diruser, node_t * np,
-			      char *trans,	/*set these on `node` */
-			      size_t ntrans, int flags, char * filename,
-			      mach_port_t * port)
+/*Starts translator `trans` on the (shadow) node `np`, which should
+  mirror the file `filename`, and returns the port `port` to the root
+  of the translator opened as `flags.`*/
+error_t 
+  node_set_translator
+  (struct protid * diruser, node_t * np, char * trans, int flags,
+   char * filename, mach_port_t * port)
 {
-#if 0
   error_t err;
   mach_port_t p;
 
@@ -671,35 +671,26 @@ error_t node_set_translators (struct protid * diruser, node_t * np,
   mach_port_t unauth_dir;
 
   /*A copy (possibly extended) of the name of the translator */
-  char *ext;
+  char * ext;
 
   /*The holders of argz-transformed translator name and arguments */
-  char *argz = NULL;
+  char * argz = NULL;
   size_t argz_len = 0;
-
-  /*The pointer to the name of the translator we are going to start now */
-  char *str;
-
-  /*The index of the translator in the list of strings */
-  size_t idx;
 
   /*The control port for the active translator */
   mach_port_t active_control;
 
-  /*A new element in the list of control ports */
-  port_el_t *p_el;
-
   /*A copy of the user information, supplied in `user` */
-  struct iouser *user;
+  struct iouser * user;
 
   /*A protid for the supplied node */
-  struct protid *newpi;
+  struct protid * newpi;
 
   /*Identity information about the current process (for fsys_getroot) */
-  uid_t *uids;
+  uid_t * uids;
   size_t nuids;
 
-  gid_t *gids;
+  gid_t * gids;
   size_t ngids;
 
   /*The retry information returned by fsys_getroot */
@@ -733,73 +724,55 @@ error_t node_set_translators (struct protid * diruser, node_t * np,
     return EPERM;
 
   /*Opens the port on which to set the new translator */
-  error_t open_port (int flags, mach_port_t * underlying,
-		     mach_msg_type_name_t * underlying_type, task_t task,
-		     void *cookie /*if 0, open the port to the node;
-				    otherwise get the port of the
-				    topmost translator on the node */
-    )
+  error_t
+    open_port
+    (int flags, mach_port_t * underlying,
+     mach_msg_type_name_t * underlying_type, task_t task, void *cookie)
   {
-    /*No errors at first */
     err = 0;
 
-    /*If a port to the node is wanted */
-    if ((int) cookie == 0)
+    /*Check, whether the user has the permissions to open this node */
+    err = check_open_permissions (diruser->user, &np->nn_stat, flags);
+    if (err)
+      return err;
+
+    /*Open the ports to underlying real file as required by the
+      translator */
+    np->nn->port = file_name_lookup_under
+      (diruser->po->np->nn->port, filename, flags, 0);
+    if(!np->nn->port)
+      return ENOENT;
+
+    /*Duplicate the supplied user */
+    err = iohelp_dup_iouser (&user, diruser->user);
+    if (err)
+      return err;
+
+    /*Create a protid for this node */
+    newpi = netfs_make_protid
+      (netfs_make_peropen (np, flags, diruser->po), user);
+    if (!newpi)
       {
-	/*check, whether the user has the permissions to open this node */
-	err = check_open_permissions (diruser->user, &np->nn_stat, flags);
-	if (err)
-	  return err;
-
-	/*open the ports to underlying real file as required by the
-	  translator and a service port (TODO: deal with this
-	  ``service'' port) */
-	np->nn->port = file_name_lookup_under
-	  (diruser->po->np->nn->port, filename, flags, 0);
-	if(!np->nn->port)
-	  return ENOENT;
-
-	/*duplicate the supplied user */
-	err = iohelp_dup_iouser (&user, diruser->user);
-	if (err)
-	  return err;
-
-	/*create a protid for this node */
-	newpi = netfs_make_protid
-	  (netfs_make_peropen (np, flags, diruser->po), user);
-	if (!newpi)
-	  {
-	    iohelp_free_iouser (user);
-	    return errno;
-	  }
-	LOG_MSG ("node_set_translators.open_port: PASSED");
-
-	/*obtain the resulting port right and set its type appropriately */
-	*underlying = p = ports_get_send_right (newpi);
-	*underlying_type = MACH_MSG_TYPE_COPY_SEND;
-
-	LOG_MSG ("node_set_translators.open_port: %ld", (long) *underlying);
-
-	/*drop our reference to the port */
-	ports_port_deref (newpi);
+	iohelp_free_iouser (user);
+	return errno;
       }
-    /*We are not setting the first translator, this one is not required
-       to sit on the node itself */
-    else
-      /*in the previous iteration of the loop fsys_getroot gave us the port
-         to the toplevel translator on the current node, namely `p`; this is
-         what is required of us now */
-      {
-	*underlying = p;
-	*underlying_type = MACH_MSG_TYPE_COPY_SEND;
-      }
+    LOG_MSG ("node_set_translators.open_port: PASSED");
+
+    /*Obtain the resulting port right and set its type appropriately */
+    *underlying = p = ports_get_send_right (newpi);
+    *underlying_type = MACH_MSG_TYPE_COPY_SEND;
+
+    LOG_MSG ("node_set_translators.open_port: %ld", (long) *underlying);
+
+    /*Drop our reference to the port */
+    ports_port_deref (newpi);
 
     /*Return the result of operations (everything should be okay here) */
     return err;
   }				/*open_port */
 
   /*Adds a "/hurd/" at the beginning of the translator name, if required */
-  char *put_in_hurd (const char *name)
+  char * put_in_hurd (const char *name)
   {
     /*If the path to the translator is absolute, return a copy of the name */
     /*TODO: A better decision technique on whether we have to add the prefix */
@@ -810,7 +783,7 @@ error_t node_set_translators (struct protid * diruser, node_t * np,
     size_t len = strlen (name);
 
     /*Try to allocate new memory */
-    char *full = malloc (6 /*strlen("/hurd/") */  + len + 1);
+    char * full = malloc (6 /*strlen("/hurd/") */  + len + 1);
     if (!full)
       return NULL;
 
@@ -831,67 +804,45 @@ error_t node_set_translators (struct protid * diruser, node_t * np,
   if (err)
     return err;
 
-  /*While all translators have not been looked through */
-  for (str = trans, idx = 0; idx < ntrans; ++idx)
-    {
-      /*obtain a copy (possibly extended) of the name */
-      ext = put_in_hurd (str);
-      if (!ext)
-	return ENOMEM;
+  /*Obtain a copy (possibly extended) of the name */
+  ext = put_in_hurd (trans);
+  if (!ext)
+    return ENOMEM;
 
-      /*move str to the next translator in the list */
-      str += strlen (str) + 1;
+  /*TODO: Better argument-parsing? */
 
-      /*TODO: Better argument-parsing? */
+  /*Obtain the argz version of the translator name */
+  err = argz_create_sep (ext, ' ', &argz, &argz_len);
+  if (err)
+    return err;
 
-      /*obtain the argz version of str */
-      err = argz_create_sep (ext, ' ', &argz, &argz_len);
-      if (err)
-	return err;
+  /*Start the translator */
+  /*The value 60000 for the timeout is the one found in settrans */
+  err = fshelp_start_translator
+    (open_port, NULL, argz, argz, argz_len, 60000, &active_control);
+  if (err)
+    return err;
 
-      /*start the translator */
-      err = fshelp_start_translator (open_port, (void *) ((idx == 0) ? 0 : 1), 
-				     argz, argz, argz_len,
-				     60000, /*this is the default in settrans*/
-				     &active_control);
-      if (err)
-	return err;
+  /*Attempt to set a translator on the port opened by the previous call */
+  err = file_set_translator
+    (p, 0, FS_TRANS_SET, 0, argz, argz_len,
+     active_control, MACH_MSG_TYPE_COPY_SEND);
+  PORT_DEALLOC (p);
+  if (err)
+    return err;
 
-      /*attempt to set a translator on the port opened by the previous call */
-      err = file_set_translator
-	(p, 0, FS_TRANS_SET, 0, argz, argz_len,
-	 active_control, MACH_MSG_TYPE_COPY_SEND);
-      /*close the port we have just opened */
-      PORT_DEALLOC (p);
+  /*Store the current control port in the new supplied shadow node */
+  np->nn->trans_cntl = active_control;
 
-      /*stop, if the attempt to set the translator failed */
-      if (err)
-	return err;
-
-      /*allocate a new element for the current control port */
-      p_el = malloc (sizeof (struct port_el));
-      if (!p_el)
-	return ENOMEM;
-
-      /*store the current control port in the new cell */
-      p_el->p = active_control;
-
-      /*add the new control port to the list */
-      p_el->next = np->nn->cntl_ports;
-      np->nn->cntl_ports = p_el;
-
-      /*obtain the port to the top of the newly-set translator */
-      err = fsys_getroot
-	(active_control, unauth_dir, MACH_MSG_TYPE_COPY_SEND,
-	 uids, nuids, gids, ngids, flags, &retry_port, retry_name, &p);
-      if (err)
-	return err;
-    }
+  /*Obtain the port to the top of the newly-set translator */
+  err = fsys_getroot
+    (active_control, unauth_dir, MACH_MSG_TYPE_COPY_SEND,
+     uids, nuids, gids, ngids, flags, &retry_port, retry_name, &p);
+  if (err)
+    return err;
 
   /*Return the port */
   *port = p;
-
-#endif
 
   /*Everything is OK here */
   return 0;
