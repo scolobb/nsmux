@@ -346,7 +346,7 @@ error_t
 
 	/*The following two lines of code reflect the old layout of
 	   dirents in the memory. Now libnetfs expects the layout
-	   identical to the layout provided by dir_readdir 
+	   identical to the layout provided by dir_readdir
 	   see dir_entries_get) */
 
 	/*copy the header of the dirent into the final block of dirents */
@@ -722,7 +722,7 @@ error_t
 
   /*Simply lookup the provided name, without creating the proxy, if not
     necessary (i.e. when the file is not a directory) */
-  err = lookup (name, flags, 0);
+  err = lookup (name, flags, proxy);
   if (err)
     {
       finalize ();
@@ -776,6 +776,9 @@ error_t
 
   /*The position of the magic separator in the filename */
   char * sep;
+
+  /*The position of the next magic separator in the filename */
+  char * next_sep;
 
   if (!diruser)
     return EOPNOTSUPP;
@@ -881,12 +884,36 @@ error_t
 
 	  if (sep)
 	    {
-	      /*TODO: Create a shadow node and start a translator
-		here. */
+	      /*We have to create a shadow node and set a translator
+		on it. */
+
+	      sep[0] = sep[1] = 0;
+	      sep += 2;
+
+	      error = netfs_attempt_lookup_improved
+		(diruser->user, dnp, filename, flags, lastcomp, &np, &file, 1);
+	      if (!error && !excl)
+		{
+		  /*set the required translator on the node */
+		  error = node_set_translator
+		    (diruser, np, sep, flags, filename, &file);
+		  if (error)
+		    goto out;
+
+		  /*if there is at least one more separator in the
+		    filename, we will have to do a retry */
+		  next_sep = magic_find_sep(sep);
+		  if (next_sep)
+		    {
+		    }
+		  else
+		    /*No (more) retries are necessary */
+		    goto justport;
+		}
 	    }
 	  else
 	    {
-	      /*We have to do an ordinary lookup */
+	      /*We have to do an ordinary lookup. */
 
 	      error = netfs_attempt_lookup_improved
 		(diruser->user, dnp, filename, flags, lastcomp, &np, &file, 0);
@@ -1037,7 +1064,7 @@ error_t
 	}
 
       /* "foo/" must see that foo points to a dir */
-      if (S_ISLNK (np->nn_translated) && (!lastcomp || mustbedir	
+      if (S_ISLNK (np->nn_translated) && (!lastcomp || mustbedir
 					  || !(flags &
 					       (O_NOLINK | O_NOTRANS))))
 	{
