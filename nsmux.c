@@ -778,7 +778,13 @@ error_t
   char * sep;
 
   /*The position of the next magic separator in the filename */
-  char * next_sep;
+  char * nextsep;
+
+  /*The name of the translator to set in this retry */
+  char * trans = NULL;
+
+  /*The length of the name of the translator to set in this retry */
+  int trans_len = 0;
 
   if (!diruser)
     return EOPNOTSUPP;
@@ -884,31 +890,97 @@ error_t
 
 	  if (sep)
 	    {
-	      /*We have to create a shadow node and set a translator
-		on it. */
-
 	      sep[0] = sep[1] = 0;
 	      sep += 2;
+
+	      /*We have to create a shadow node and set a translator
+		on it. */
 
 	      error = netfs_attempt_lookup_improved
 		(diruser->user, dnp, filename, flags, lastcomp, &np, &file, 1);
 	      if (!error && !excl)
 		{
+		  /*if there is at least one more separator in the
+		    filename, we will have to do a retry */
+		  nextsep = magic_find_sep(sep);
+		  if (nextsep)
+		    {
+		      trans_len = nextsep - sep;
+		      trans = malloc (trans_len + 1);
+		      if (!trans)
+			goto out;
+		      strncpy(trans, sep, trans_len);
+		      trans[trans_len] = 0;
+
+		      /*set the required translator on the node */
+		      error = node_set_translator
+			(diruser, np, trans, flags, filename, &file);
+		      if (error)
+			goto out;
+
+		      free (trans);
+
+		      /*prepare the information for the retry */
+
+/* 		      *retry_port_type = MACH_MSG_TYPE_MOVE_SEND; */
+		      strcpy (retry_name, nextsep);
+		      if (nextname)
+			{
+			  strcat (retry_name, "/");
+			  strcat (retry_name, nextname);
+			}
+
+		      /*create a proxy node for the port to the root
+			of translator */
+		      netfs_nput (np);
+		      error = node_create_from_port (file, &np);
+
+		      /*we don't check the permissions here, because
+			this check has been performed in the lookup of
+			the real filename in the beginning of the
+			process of setting up the dynamic translator
+			stack */
+
+		      flags &= ~OPENONLY_STATE_MODES;
+		      error = iohelp_dup_iouser (&user, diruser->user);
+		      if (error)
+			goto out;
+
+		      newpi = netfs_make_protid 
+			(netfs_make_peropen (np, flags, diruser->po), user);
+		      if (!newpi)
+			{
+			  iohelp_free_iouser (user);
+			  error = errno;
+			  goto out;
+			}
+
+		      *retry_port = ports_get_right (newpi);
+		      ports_port_deref (newpi);
+
+		      if (np)
+			netfs_nput (np);
+		      if (dnp)
+			netfs_nrele (dnp);
+
+		      /*ask the client to retry */
+		      return 0;
+		    }
+
 		  /*set the required translator on the node */
 		  error = node_set_translator
 		    (diruser, np, sep, flags, filename, &file);
 		  if (error)
 		    goto out;
 
-		  /*if there is at least one more separator in the
-		    filename, we will have to do a retry */
-		  next_sep = magic_find_sep(sep);
-		  if (next_sep)
-		    {
-		    }
-		  else
-		    /*No (more) retries are necessary */
+  		  /*No more retries are necessary, if we are at the
+		    last component of the filename */
+		  if(lastcomp)
 		    goto justport;
+		  else
+		    /*TODO: Do a retry in case this is not the last
+		      component of the filename. */
+		    ;
 		}
 	    }
 	  else
