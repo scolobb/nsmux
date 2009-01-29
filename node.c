@@ -163,6 +163,60 @@ error_t node_create_proxy (lnode_t * lnode, node_t ** node)
 }				/*node_create_proxy */
 
 /*---------------------------------------------------------------------------*/
+/*Creates a proxy (or a shadow) node for the supplied port*/
+error_t node_create_from_port (mach_port_t port, node_t ** node)
+{
+  error_t err = 0;
+
+  /*Create a new netnode */
+  netnode_t * netnode_new = malloc (sizeof (netnode_t));
+
+  /*Reset the memory allocated for the new netnode (just in case :-) ) */
+  memset (netnode_new, 0, sizeof (netnode_t));
+
+  /*If the memory could not be allocated */
+  if (netnode_new == NULL)
+    err = ENOMEM;
+  else
+    {
+      /*create a new node from the netnode */
+      node_t * node_new = netfs_make_node (netnode_new);
+
+      /*If the creation failed */
+      if (node_new == NULL)
+	{
+	  /*set the error code */
+	  err = ENOMEM;
+
+	  /*destroy the netnode created above */
+	  free (netnode_new);
+
+	  /*stop */
+	  return err;
+	}
+
+      /*this node is ``orphan'' -- it is not associated to any lnode
+	and has some service functions only */
+      node_new->nn->lnode = NULL;
+
+      /*setup the information in the netnode */
+      node_new->nn->flags = 0;
+      node_new->nn->ncache_next = node_new->nn->ncache_prev = NULL;
+
+      /*initialize the data fields dealing with positioning this node
+	in the dynamic translator stack */
+      node_new->nn->trans_cntl = MACH_PORT_NULL;
+      node_new->nn->below = NULL;
+
+      /*store the result of creation in the second parameter */
+      *node = node_new;
+    }
+
+  /*Return the result of operations */
+  return err;
+}				/*node_create_from_port */
+
+/*---------------------------------------------------------------------------*/
 /*Destroys the specified node and removes a light reference from the
   associated light node*/
 void node_destroy (node_t * np)

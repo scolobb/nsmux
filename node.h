@@ -119,6 +119,9 @@ error_t node_create (lnode_t * lnode, node_t ** node);
 /*Derives a new proxy from `lnode`*/
 error_t node_create_proxy (lnode_t * lnode, node_t ** node);
 /*---------------------------------------------------------------------------*/
+/*Creates a proxy (or a shadow) node for the supplied port*/
+error_t node_create_from_port (mach_port_t port, node_t ** node);
+/*---------------------------------------------------------------------------*/
 /*Destroys the specified node and removes a light reference from the
   associated light node*/
 void node_destroy (node_t * np);
