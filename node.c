@@ -202,6 +202,7 @@ error_t node_create_from_port (mach_port_t port, node_t ** node)
       /*setup the information in the netnode */
       node_new->nn->flags = 0;
       node_new->nn->ncache_next = node_new->nn->ncache_prev = NULL;
+      node_new->nn->port = port;
 
       /*initialize the data fields dealing with positioning this node
 	in the dynamic translator stack */
@@ -790,12 +791,16 @@ error_t
     if (err)
       return err;
 
-    /*Open the ports to underlying real file as required by the
-      translator */
-    np->nn->port = file_name_lookup_under
-      (diruser->po->np->nn->port, filename, flags, 0);
-    if(!np->nn->port)
-      return ENOENT;
+    if (!np->nn->port)
+      {
+	/*We have to do the lookup only in case the supplied node does
+	  not already have a port. */
+
+	np->nn->port = file_name_lookup_under
+	  (diruser->po->np->nn->port, filename, flags, 0);
+	if (!np->nn->port)
+	  return ENOENT;
+      }
 
     /*Duplicate the supplied user */
     err = iohelp_dup_iouser (&user, diruser->user);
