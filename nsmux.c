@@ -166,7 +166,8 @@ error_t
 /*Validates the stat data for the node*/
 error_t netfs_validate_stat (struct node * np, struct iouser * cred)
 {
-  LOG_MSG ("netfs_validate_stat: '%s'", (np ? np->nn->lnode->name : ""));
+  LOG_MSG ("netfs_validate_stat: '%s'",
+	   ((np && np->nn->lnode) ? np->nn->lnode->name : ""));
 
   error_t err = 0;
 
@@ -896,8 +897,21 @@ error_t
 	      /*We have to create a shadow node and set a translator
 		on it. */
 
-	      error = netfs_attempt_lookup_improved
-		(diruser->user, dnp, filename, flags, lastcomp, &np, &file, 1);
+	      if (sep == filename + 2)
+		{
+		  /*this is a retry, so no need to do lookups */
+		  error = 0;
+		  np = dnp;
+		  netfs_nref (np);
+
+		  mutex_unlock (&np->lock);
+		}
+	      else
+		  /*lookup the file in the real filesystem */ 
+		  error = netfs_attempt_lookup_improved
+		    (diruser->user, dnp, filename, flags,
+		     lastcomp, &np, &file, 1);
+
 	      if (!error && !excl)
 		{
 		  /*if there is at least one more separator in the
@@ -921,8 +935,6 @@ error_t
 		      free (trans);
 
 		      /*prepare the information for the retry */
-
-/* 		      *retry_port_type = MACH_MSG_TYPE_MOVE_SEND; */
 		      strcpy (retry_name, nextsep);
 		      if (nextname)
 			{

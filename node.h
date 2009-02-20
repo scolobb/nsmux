@@ -37,7 +37,7 @@
 /*---------------------------------------------------------------------------*/
 /*--------Macros-------------------------------------------------------------*/
 /*Checks whether the give node is the root of the proxy filesystem*/
-#define NODE_IS_ROOT(n) (((n)->nn->lnode->dir) ? (0) : (1))
+#define NODE_IS_ROOT(n) (((n)->nn->lnode && (n)->nn->lnode->dir) ? (0) : (1))
 /*---------------------------------------------------------------------------*/
 /*Node flags*/
 #define FLAG_NODE_ULFS_FIXED    0x00000001 /*this node should not be updated */

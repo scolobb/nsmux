@@ -821,10 +821,21 @@ error_t
     *underlying = p = ports_get_send_right (newpi);
     *underlying_type = MACH_MSG_TYPE_COPY_SEND;
 
+    /**underlying_type = MACH_MSG_TYPE_COPY_SEND;*/
+    /**underlying_type = MACH_MSG_TYPE_MOVE_SEND;*/
+
     LOG_MSG ("node_set_translators.open_port: %ld", (long) *underlying);
 
     /*Drop our reference to the port */
     ports_port_deref (newpi);
+
+    /*
+    char buf[256];
+    char *_buf = buf;
+    size_t len = 256;
+    io_read (p, &_buf, &len, 0, len);
+    LOG_MSG ("node_set_translator: Read from np: '%s'", buf);
+    */    
 
     /*Return the result of operations (everything should be okay here) */
     return err;
@@ -905,6 +916,6 @@ error_t
 
   /*Everything is OK here */
   return 0;
-}				/*node_set_translators */
+}				/*node_set_translator */
 
 /*---------------------------------------------------------------------------*/
