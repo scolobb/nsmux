@@ -908,6 +908,7 @@ error_t
 
 		  /*`np` is a proxy node of the lower translator. We
 		    have to create a shadow node explicitly. */
+
 		  error = node_get_send_port (diruser, np, flags, &file);
 		  if (error)
 		    goto out;
@@ -928,6 +929,9 @@ error_t
 
 	      if (!error && !excl)
 		{
+		  /*We've just created a shadow node. */
+		  np->nn->type = NODE_TYPE_SHADOW;
+
 		  /*If there is at least one more separator in the
 		    filename, we will have to do a retry */
 		  nextsep = magic_find_sep(sep);

@@ -83,6 +83,8 @@ error_t node_create (lnode_t * lnode, node_t ** node)
 	  return err;
 	}
 
+      node_new->nn->type = NODE_TYPE_NORMAL;
+
       /*link the lnode to the new node */
       lnode->node = node_new;
 
@@ -142,6 +144,8 @@ error_t node_create_proxy (lnode_t * lnode, node_t ** node)
 	  return err;
 	}
 
+      node_new->nn->type = NODE_TYPE_PROXY;
+
       /*add this new node to the list of proxies of `lnode` */
       lnode_add_proxy (lnode, node_new);
 
@@ -194,6 +198,10 @@ error_t node_create_from_port (mach_port_t port, node_t ** node)
 	  /*stop */
 	  return err;
 	}
+
+      /*The caller may want to change this to NODE_TYPE_SHADOW if it's
+	the case. */
+      node_new->nn->type = NODE_TYPE_PROXY;
 
       /*this node is ``orphan'' -- it is not associated to any lnode
 	and has some service functions only */

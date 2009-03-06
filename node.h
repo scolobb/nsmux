@@ -44,6 +44,11 @@
 #define FLAG_NODE_INVALIDATE    0x00000002 /*this node must be updated */
 #define FLAG_NODE_ULFS_UPTODATE	0x00000004 /*this node has just been updated */
 /*---------------------------------------------------------------------------*/
+/*Types of nodes */
+#define NODE_TYPE_NORMAL	0
+#define NODE_TYPE_PROXY		1
+#define NODE_TYPE_SHADOW	2
+/*---------------------------------------------------------------------------*/
 /*The type of offset corresponding to the current platform*/
 #ifdef __USE_FILE_OFFSET64
 #	define OFFSET_T __off64_t
@@ -74,6 +79,9 @@ struct netnode
 
   /*the flags associated with this node */
   int flags;
+
+  /*the type of the current node */
+  int type;
 
   /*a port to the underlying filesystem */
   file_t port;
