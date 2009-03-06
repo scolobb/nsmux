@@ -151,9 +151,19 @@ error_t node_unlink_file (node_t * dir, char *name);
 /*Starts translator `trans` on the (shadow) node `np`, which should
   mirror the file `filename`, and returns the port `port` to the root
   of the translator opened as `flags.`*/
-error_t 
+error_t
   node_set_translator
   (struct protid *diruser, node_t * np, char * trans, int flags,
    char * filename, mach_port_t * port);
+/*---------------------------------------------------------------------------*/
+/*Gets the port to the supplied node. */
+error_t
+  node_get_port
+  (struct protid * diruser, node_t * np, int flags, mach_port_t * port);
+/*---------------------------------------------------------------------------*/
+/*Gets the send port right to the supplied node. */
+error_t
+  node_get_send_port
+  (struct protid * diruser, node_t * np, int flags, mach_port_t * port);
 /*---------------------------------------------------------------------------*/
 #endif /*__NODE_H__*/

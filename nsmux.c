@@ -765,7 +765,7 @@ error_t
   struct protid *newpi;
   struct iouser *user;
 
-  /*The port to the file for the case when we don't need proxy nodes */
+  /*The port to the file */
   file_t file = MACH_PORT_NULL;
 
   /*The port to the same file with restricted rights */
@@ -905,6 +905,20 @@ error_t
 		  netfs_nref (np);
 
 		  mutex_unlock (&np->lock);
+
+		  /*`np` is a proxy node of the lower translator. We
+		    have to create a shadow node explicitly. */
+		  error = node_get_send_port (diruser, np, flags, &file);
+		  if (error)
+		    goto out;
+
+		  error = node_create_from_port(file, &np);
+		  if (error)
+		    goto out;
+
+		  /*`np` is supposed to be unlocked by the following
+		    code. */
+		  mutex_unlock (&np->lock);
 		}
 	      else
 		  /*lookup the file in the real filesystem */ 
@@ -914,7 +928,7 @@ error_t
 
 	      if (!error && !excl)
 		{
-		  /*if there is at least one more separator in the
+		  /*If there is at least one more separator in the
 		    filename, we will have to do a retry */
 		  nextsep = magic_find_sep(sep);
 		  if (nextsep)
@@ -925,7 +939,7 @@ error_t
 			goto out;
 		      strncpy(trans, sep, trans_len);
 		      trans[trans_len] = 0;
-
+		      
 		      /*set the required translator on the node */
 		      error = node_set_translator
 			(diruser, np, trans, flags, filename, &file);
@@ -947,28 +961,15 @@ error_t
 		      netfs_nput (np);
 		      error = node_create_from_port (file, &np);
 
+		      /*create a port to the proxy node */
+
 		      /*we don't check the permissions here, because
 			this check has been performed in the lookup of
-			the real filename in the beginning of the
+			the real filename at the beginning of the
 			process of setting up the dynamic translator
 			stack */
 
-		      flags &= ~OPENONLY_STATE_MODES;
-		      error = iohelp_dup_iouser (&user, diruser->user);
-		      if (error)
-			goto out;
-
-		      newpi = netfs_make_protid 
-			(netfs_make_peropen (np, flags, diruser->po), user);
-		      if (!newpi)
-			{
-			  iohelp_free_iouser (user);
-			  error = errno;
-			  goto out;
-			}
-
-		      *retry_port = ports_get_right (newpi);
-		      ports_port_deref (newpi);
+		      error = node_get_port (diruser, np, flags, retry_port);
 
 		      if (np)
 			netfs_nput (np);
@@ -985,10 +986,21 @@ error_t
 		  if (error)
 		    goto out;
 
+		  /*create a proxy node for the port to the current
+		    translator */
+		  netfs_nput (np);
+		  error = node_create_from_port (file, &np);
+
+		  /*create a port to the proxy node */
+		  error = node_get_port (diruser, np, flags, retry_port);
+		  if (error)
+		    goto out;
+
   		  /*No more retries are necessary, if we are at the
 		    last component of the filename */
 		  if(lastcomp)
-		    goto justport;
+		    /*goto justport; */
+		    goto out;
 		  else
 		    /*TODO: Do a retry in case this is not the last
 		      component of the filename. */

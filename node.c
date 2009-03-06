@@ -232,19 +232,23 @@ void node_destroy (node_t * np)
   /*TODO: If this node is a shadow node, kill the translator sitting
     on this node. */
 
-  /*Lock the lnode corresponding to the current node */
-  mutex_lock (&np->nn->lnode->lock);
+  /*If there is an lnode associated with the current node, detach
+    it */
+  if (np->nn->lnode)
+    {
+      if (np->nn->lnode->node == np)
+	{
+	  mutex_lock (&np->nn->lnode->lock);
 
-  /*If the node to be destroyed is a real netfs node */
-  if (np->nn->lnode->node == np)
-    /*orphan the light node */
-    np->nn->lnode->node = NULL;
-  else
-    /*remove a reference to this node from the list of proxies */
-    lnode_remove_proxy (np->nn->lnode, np);
+	  /*orphan the light node */
+	  np->nn->lnode->node = NULL;
 
-  /*Remove a reference from the lnode */
-  lnode_ref_remove (np->nn->lnode);
+	  lnode_ref_remove (np->nn->lnode);
+	}
+      else
+	/*remove a reference to this node from the list of proxies */
+	lnode_remove_proxy (np->nn->lnode, np);
+    }
 
   /*Free the netnode and the node itself */
   free (np->nn);
@@ -918,4 +922,73 @@ error_t
   return 0;
 }				/*node_set_translator */
 
+/*---------------------------------------------------------------------------*/
+/*Gets the port to the supplied node. */
+error_t
+  node_get_port
+  (struct protid * diruser, node_t * np, int flags, mach_port_t * port)
+{
+  error_t error = 0;
+
+  /*The new user for the port */
+  struct iouser * user;
+
+  /*The protid for the port */
+  struct protid * newpi;
+
+  /*Create a port to the supplied node without checking anything. */
+
+  flags &= ~OPENONLY_STATE_MODES;
+  error = iohelp_dup_iouser (&user, diruser->user);
+  if (error)
+    return error;
+
+  newpi = netfs_make_protid 
+    (netfs_make_peropen (np, flags, diruser->po), user);
+  if (!newpi)
+    {
+      iohelp_free_iouser (user);
+      error = errno;
+      return error;
+    }
+  
+  *port = ports_get_right (newpi);
+  ports_port_deref (newpi);
+  return error;
+}				/*node_get_port */
+
+/*---------------------------------------------------------------------------*/
+/*Gets the send port right to the supplied node. */
+error_t
+  node_get_send_port
+  (struct protid * diruser, node_t * np, int flags, mach_port_t * port)
+{
+  error_t error = 0;
+
+  /*The new user for the port */
+  struct iouser * user;
+
+  /*The protid for the port */
+  struct protid * newpi;
+
+  /*Create a port to the supplied node without checking anything. */
+
+  flags &= ~OPENONLY_STATE_MODES;
+  error = iohelp_dup_iouser (&user, diruser->user);
+  if (error)
+    return error;
+
+  newpi = netfs_make_protid 
+    (netfs_make_peropen (np, flags, diruser->po), user);
+  if (!newpi)
+    {
+      iohelp_free_iouser (user);
+      error = errno;
+      return error;
+    }
+  
+  *port = ports_get_send_right (newpi);
+  ports_port_deref (newpi);
+  return error;
+}				/*node_get_send_port */
 /*---------------------------------------------------------------------------*/
