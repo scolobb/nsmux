@@ -765,6 +765,9 @@ error_t
   struct protid *newpi;
   struct iouser *user;
 
+  /*The old node (required in setting up translator stacks) */
+  struct node * old_np;
+
   /*The port to the file */
   file_t file = MACH_PORT_NULL;
 
@@ -912,10 +915,14 @@ error_t
 		  error = node_get_send_port (diruser, np, flags, &file);
 		  if (error)
 		    goto out;
-
+		  
+		  old_np = np;
 		  error = node_create_from_port(file, &np);
 		  if (error)
 		    goto out;
+
+		  /*connect the nodes into a chain. */
+		  np->nn->below = old_np;
 
 		  /*`np` is supposed to be unlocked by the following
 		    code. */
@@ -963,7 +970,14 @@ error_t
 		      /*create a proxy node for the port to the root
 			of translator */
 		      netfs_nput (np);
+		      old_np = np;
 		      error = node_create_from_port (file, &np);
+		      
+		      if(error)
+			goto out;
+		      
+		      /*connect the nodes in a chain. */
+		      np->nn->below = old_np;
 
 		      /*create a port to the proxy node */
 
@@ -993,7 +1007,13 @@ error_t
 		  /*create a proxy node for the port to the current
 		    translator */
 		  netfs_nput (np);
+		  old_np = np;
 		  error = node_create_from_port (file, &np);
+		  if(error)
+		    goto out;
+
+		  /*connect the nodes in a chain. */
+		  np->nn->below = old_np;
 
 		  /*create a port to the proxy node */
 		  error = node_get_port (diruser, np, flags, retry_port);
