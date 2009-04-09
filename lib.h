@@ -5,8 +5,8 @@
 /*---------------------------------------------------------------------------*/
 /*Based on the code of unionfs translator.*/
 /*---------------------------------------------------------------------------*/
-/*Copyright (C) 2001, 2002, 2005, 2008 Free Software Foundation, Inc.
-  Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
+/*Copyright (C) 2001, 2002, 2005, 2008, 2009 Free Software Foundation,
+  Inc.  Written by Sergiu Ivanov <unlimitedscolobb@gmail.com>.
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
