@@ -42,7 +42,7 @@ trans_el_t * dyntrans = NULL;
 /*Adds a translator control port to the list of ports. One should use
   only this function to add a new element to the list of ports. */
 error_t
-trans_register (mach_port_t cntl)
+trans_register (fsys_t cntl, trans_el_t ** new_trans)
 {
   /*The new entry in the list */
   trans_el_t * el;
@@ -56,6 +56,8 @@ trans_register (mach_port_t cntl)
   el->prev = NULL;
   el->next = dyntrans;
   dyntrans = el;
+
+  *new_trans = el;
 
   return 0;
 }				/*trans_register */

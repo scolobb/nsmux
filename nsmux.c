@@ -34,6 +34,7 @@
 #include <hurd/netfs.h>
 #include <fcntl.h>
 #include <hurd/paths.h>
+#include <hurd/fsys.h>
 /*---------------------------------------------------------------------------*/
 #include "debug.h"
 #include "options.h"
@@ -1638,6 +1639,96 @@ kern_return_t
   /*Return the result of operations */
   return err;
 }				/*netfs_S_file_get_translator_cntl */
+
+/*---------------------------------------------------------------------------*/
+/* Shutdown the filesystem; flags are as for fsys_goaway. */
+error_t
+netfs_shutdown (int flags)
+{
+  error_t
+  helper (struct node *node)
+    {
+      error_t err;
+      mach_port_t control;
+
+      err = fshelp_fetch_control (&node->transbox, &control);
+      if (!err && (control != MACH_PORT_NULL))
+        {
+          mutex_unlock (&node->lock);
+          err = fsys_goaway (control, flags);
+          mach_port_deallocate (mach_task_self (), control);
+          mutex_lock (&node->lock);
+        }
+      else
+        err = 0;
+
+      if ((err == MIG_SERVER_DIED) || (err == MACH_SEND_INVALID_DEST))
+        err = 0;
+
+      return err;
+    }
+
+  int nports;
+  int err;
+
+  if ((flags & FSYS_GOAWAY_UNLINK)
+      && S_ISDIR (netfs_root_node->nn_stat.st_mode))
+    return EBUSY;
+
+  if (flags & FSYS_GOAWAY_NOWAIT)
+    LOG_MSG("NOWAIT");
+  LOG_MSG("WAIT");
+
+  if (flags & FSYS_GOAWAY_RECURSE)
+    {
+      /*nsmux has been requested shut down recursively. Shut down all
+	dynamic translators. Statically set translators will not be
+	shut down, because libnetfs does not (yet?) do this itself, as
+	different from libdiskfs. */
+      err = trans_shutdown_all (flags);
+
+#ifdef NOTYET
+      err = netfs_node_iterate (helper);
+#endif
+      if (err)
+	return err;
+    }
+
+#ifdef NOTYET
+  rwlock_writer_lock (&netfs_fsys_lock);
+#endif
+
+  /* Permit all current RPC's to finish, and then suspend any new ones.  */
+  err = ports_inhibit_class_rpcs (netfs_protid_class);
+  if (err)
+    {
+#ifdef  NOTYET
+      rwlock_writer_unlock (&netfs_fsys_lock);
+#endif
+      return err;
+    }
+
+  nports = ports_count_class (netfs_protid_class);
+  if (((flags & FSYS_GOAWAY_FORCE) == 0) && nports)
+    /* There are outstanding user ports; resume operations. */
+    {
+      ports_enable_class (netfs_protid_class);
+      ports_resume_class_rpcs (netfs_protid_class);
+#ifdef NOTYET
+      rwlock_writer_unlock (&netfs_fsys_lock);
+#endif
+      return EBUSY;
+    }
+
+  if (!(flags & FSYS_GOAWAY_NOSYNC))
+    {
+      err = netfs_attempt_syncfs (0, flags);
+      if (err)
+        return err;
+    }
+
+  return 0;
+}				/*netfs_shutdown */
 
 /*---------------------------------------------------------------------------*/
 /*Entry point*/

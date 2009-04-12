@@ -98,7 +98,7 @@ error_t node_create (lnode_t * lnode, node_t ** node)
 
       /*initialize the data fields dealing with positioning this node
 	in the dynamic translator stack */
-      node_new->nn->trans_cntl = MACH_PORT_NULL;
+      node_new->nn->dyntrans = NULL;
       node_new->nn->below = NULL;
 
       /*store the result of creation in the second parameter */
@@ -155,7 +155,7 @@ error_t node_create_proxy (lnode_t * lnode, node_t ** node)
 
       /*initialize the data fields dealing with positioning this node
 	in the dynamic translator stack */
-      node_new->nn->trans_cntl = MACH_PORT_NULL;
+      node_new->nn->dyntrans = NULL;
       node_new->nn->below = NULL;
 
       /*store the result of creation in the second parameter */
@@ -214,7 +214,7 @@ error_t node_create_from_port (mach_port_t port, node_t ** node)
 
       /*initialize the data fields dealing with positioning this node
 	in the dynamic translator stack */
-      node_new->nn->trans_cntl = MACH_PORT_NULL;
+      node_new->nn->dyntrans = NULL;
       node_new->nn->below = NULL;
 
       /*store the result of creation in the second parameter */
@@ -913,8 +913,8 @@ error_t
   if (err)
     return err;
 
-  /*Store the current control port in the new supplied shadow node */
-  np->nn->trans_cntl = active_control;
+  /*Register the new translator*/
+  err = trans_register (active_control, &np->nn->dyntrans);
 
   /*Obtain the port to the top of the newly-set translator */
   err = fsys_getroot

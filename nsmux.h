@@ -238,4 +238,8 @@ kern_return_t
   netfs_S_file_get_translator_cntl
   (struct protid *user, mach_port_t * cntl, mach_msg_type_name_t * cntltype);
 /*---------------------------------------------------------------------------*/
+/* Shutdown the filesystem; flags are as for fsys_goaway. */
+error_t
+netfs_shutdown (int flags);
+/*---------------------------------------------------------------------------*/
 #endif /*__NSMUX_H__*/

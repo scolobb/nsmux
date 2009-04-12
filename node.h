@@ -32,6 +32,7 @@
 #include <hurd/netfs.h>
 /*---------------------------------------------------------------------------*/
 #include "lnode.h"
+#include "trans.h"
 /*---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------*/
@@ -74,9 +75,10 @@ struct netnode
   /*a port to the underlying filesystem */
   file_t port;
 
-  /*the control port of the translator sitting on this node, in case
-    this node is a shadow node */
-  fsys_t trans_cntl;
+  /*a reference to the element in the list of dynamic translators
+    corresponding to the translator sitting on this node, in case this
+    node is a shadow node */
+  struct trans_el * dyntrans;
 
   /*the reference to the shadow node that is below the current shadow
     node in the dynamic translator stack */

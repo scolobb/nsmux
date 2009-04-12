@@ -21,8 +21,8 @@
   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
   USA.*/
 /*---------------------------------------------------------------------------*/
-#ifndef __DEBUG_H__
-#define __DEBUG_H__
+#ifndef __TRANS_H__
+#define __TRANS_H__
 
 /*---------------------------------------------------------------------------*/
 #include <hurd.h>
@@ -35,7 +35,7 @@
 struct trans_el
 {
   /*the control port to the translator */
-  mach_port_t cntl;
+  fsys_t cntl;
 
   /*the next and the previous elements in the list */
   struct trans_el * next, * prev;
@@ -55,7 +55,7 @@ extern trans_el_t * dyntrans;
 /*Adds a translator control port to the list of ports. One should use
   only this function to add a new element to the list of ports. */
 error_t
-trans_register (mach_port_t cntl);
+trans_register (fsys_t cntl, trans_el_t ** new_trans);
 /*---------------------------------------------------------------------------*/
 /*Removes a translator control port from the list of ports. One should
   use only this function to remove an element from the list of
