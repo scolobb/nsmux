@@ -1,1 +1,1 @@
-gcc -DDEBUG -Wall -g -lnetfs -lfshelp -liohelp -lthreads -lports -lihash -lshouldbeinlibc -o nsmux nsmux.c node.c lnode.c ncache.c options.c lib.c magic.c trans.c 2>&1 | tee errors
+gcc -DDEBUG -Wall -g -lnetfs -lfshelp -liohelp -lthreads -lports -lihash -lshouldbeinlibc -o nsmux nsmux.c node.c lnode.c ncache.c options.c lib.c 2>&1 | tee errors
