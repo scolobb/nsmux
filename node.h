@@ -59,18 +59,6 @@
 
 /*---------------------------------------------------------------------------*/
 /*--------Types--------------------------------------------------------------*/
-/*A list element containing a port*/
-struct port_el
-{
-  /*the port */
-  mach_port_t p;
-
-  /*the next element in the list */
-  struct port_el *next;
-};				/*struct port_el */
-/*---------------------------------------------------------------------------*/
-typedef struct port_el port_el_t;
-/*---------------------------------------------------------------------------*/
 /*The user-defined node for libnetfs*/
 struct netnode
 {
