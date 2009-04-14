@@ -747,6 +747,9 @@ error_t
   /*The control port for the active translator */
   mach_port_t active_control;
 
+  /*The PID of the started translator */
+  pid_t trans_pid;
+
   /*A copy of the user information, supplied in `user` */
   struct iouser * user;
 
@@ -841,6 +844,9 @@ error_t
     /*Drop our reference to the port */
     ports_port_deref (newpi);
 
+    /*Store the task ID of the new translator */
+    trans_pid = task2pid(task);
+
     /*
     char buf[256];
     char *_buf = buf;
@@ -914,7 +920,10 @@ error_t
     return err;
 
   /*Register the new translator*/
-  err = trans_register (active_control, &np->nn->dyntrans);
+  err = trans_register (active_control, trans_pid, &np->nn->dyntrans);
+  LOG_MSG ("node_set_translator: Translator PID: %d", (int)trans_pid);
+  if (err)
+    return err;
 
   /*Obtain the port to the top of the newly-set translator */
   err = fsys_getroot

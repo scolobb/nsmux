@@ -28,6 +28,8 @@
 #include <hurd.h>
 #include <error.h>
 /*---------------------------------------------------------------------------*/
+#include "lib.h"
+/*---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------*/
 /*---------Types-------------------------------------------------------------*/
@@ -36,6 +38,9 @@ struct trans_el
 {
   /*the control port to the translator */
   fsys_t cntl;
+
+  /*the PID of the translator */
+  pid_t pid;
 
   /*the next and the previous elements in the list */
   struct trans_el * next, * prev;
@@ -52,21 +57,22 @@ extern trans_el_t * dyntrans;
 
 /*---------------------------------------------------------------------------*/
 /*---------Functions---------------------------------------------------------*/
-/*Adds a translator control port to the list of ports. One should use
-  only this function to add a new element to the list of ports. */
+/*Adds a translator to the list of translators. One should use only
+  this function to add a new element to the list. */
 error_t
-trans_register (fsys_t cntl, trans_el_t ** new_trans);
+trans_register (fsys_t cntl, pid_t pid, trans_el_t ** new_trans);
 /*---------------------------------------------------------------------------*/
-/*Removes a translator control port from the list of ports. One should
-  use only this function to remove an element from the list of
-  ports. This function does not shut down the translator. */
+/*Removes a translator from the list. One should use only this
+  function to remove an element from the list. This function does not
+  shut down the translator. */
 void
 trans_unregister (trans_el_t * trans);
 /*---------------------------------------------------------------------------*/
-/*Gracefully shuts down all the translators registered in the
-  list with `flags`. */
+/*Gracefully shuts down all the translators registered in the list
+  with `flags`. If wait is nonzero, waits for each translator to
+  finish. */
 error_t
-trans_shutdown_all (int flags);
+trans_shutdown_all (int flags, int wait);
 /*---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------*/

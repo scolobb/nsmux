@@ -1675,17 +1675,13 @@ netfs_shutdown (int flags)
       && S_ISDIR (netfs_root_node->nn_stat.st_mode))
     return EBUSY;
 
-  if (flags & FSYS_GOAWAY_NOWAIT)
-    LOG_MSG("NOWAIT");
-  LOG_MSG("WAIT");
-
   if (flags & FSYS_GOAWAY_RECURSE)
     {
       /*nsmux has been requested shut down recursively. Shut down all
 	dynamic translators. Statically set translators will not be
 	shut down, because libnetfs does not (yet?) do this itself, as
 	different from libdiskfs. */
-      err = trans_shutdown_all (flags);
+      err = trans_shutdown_all (flags, 1);
 
 #ifdef NOTYET
       err = netfs_node_iterate (helper);
